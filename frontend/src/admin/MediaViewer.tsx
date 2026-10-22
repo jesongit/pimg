@@ -10,6 +10,11 @@ import { useGallery } from "./GalleryScope";
 
 type Stage = "idle" | "preparing" | "loading" | "decoding" | "ready" | "error";
 
+export type MediaSourceAdapter = {
+  prepare: (compatible: string, retry: boolean, signal: AbortSignal) => Promise<OriginalView>;
+  download: string;
+};
+
 export async function originalImage(url: string, size: number, signal: AbortSignal, progress: (value: number) => void): Promise<string> {
   const response = await fetch(url, { credentials: "same-origin", signal });
   if (!response.ok) {
@@ -32,9 +37,10 @@ export async function originalImage(url: string, size: number, signal: AbortSign
   return URL.createObjectURL(new Blob(chunks, { type: response.headers.get("Content-Type") || "image/jpeg" }));
 }
 
-export default function MediaViewer({ file, blocked, status, actions, notice, onPrev, onNext, interactionActive=true }: {
+export default function MediaViewer({ file, blocked, status, actions, notice, onPrev, onNext, interactionActive=true, sourceAdapter }: {
   file: FileItem; blocked?: string; status?: ReactNode; actions?: ReactNode; notice?: ReactNode;
   onPrev?:()=>void;onNext?:()=>void;interactionActive?:boolean;
+  sourceAdapter?: MediaSourceAdapter;
 }) {
   const { api } = useGallery();
   const video = file.kind === "video", enabled = file.archive_state === "done" && !blocked;
@@ -47,7 +53,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   const activeSignal = useRef<AbortSignal>(), heicTried = useRef(false), playNext = useRef(false), expectedTime = useRef(0);
   const requestedRef=useRef(requested);requestedRef.current=requested;
   const parts = file.media_parts || [], currentPart = parts[partIndex];
-  const preview = enabled && (file.has_thumb || file.kind === "image" || file.kind === "video") ? api.url(`/files/${encodeURIComponent(file.id)}/content?kind=thumb&v=${previewAttempt}`) : "";
+  const preview = !sourceAdapter && enabled && (file.has_thumb || file.kind === "image" || file.kind === "video") ? api.url(`/files/${encodeURIComponent(file.id)}/content?kind=thumb&v=${previewAttempt}`) : "";
   const loading = ["preparing", "loading", "decoding"].includes(stage);
   const requestPlay=()=>{
     if(!enabled||requestedRef.current&&stage!=="error")return;
@@ -79,14 +85,15 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     setStage("preparing"); setPercent(0); setError(""); setVisible(false); setSource("");
     const poll = async (retry: boolean) => {
       try {
-        const result = await api.post<OriginalView>(`/files/${encodeURIComponent(file.id)}/original`, { retry, ...(file.media_version === 2 ? { part: partIndex, compatible } : {}) });
+        const result = sourceAdapter ? await sourceAdapter.prepare(compatible, retry, controller.signal) : await api.post<OriginalView>(`/files/${encodeURIComponent(file.id)}/original`, { retry, ...(file.media_version === 2 ? { part: partIndex, compatible } : {}) });
         if (stopped) return;
+        if (sourceAdapter && result.compatible && result.compatible !== compatible) { setCompatible(result.compatible); return; }
         if (result.status === "failed") { if(video && compatible === "remux") { setCompatible("transcode"); return; } throw new Error(result.error || "原件加载失败，请重试。"); }
         if (result.status !== "ready" || !result.url) {
           setPercent(Math.max(0, Math.min(99, result.percent))); timer = setTimeout(() => void poll(false), 600); return;
         }
         setStage("loading"); setPercent(0);
-        window.dispatchEvent(new CustomEvent("pimg:media-stored", { detail: { id: file.id } }));
+        if (!sourceAdapter) window.dispatchEvent(new CustomEvent("pimg:media-stored", { detail: { id: file.id } }));
         if (video) { setSource(result.url); return; }
         const size = result.compatible ? 0 : result.part?.size || file.size;
         const url = await originalImage(result.url, size, controller.signal, value => { if (!stopped) setPercent(value); });
@@ -99,7 +106,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     };
     void poll(true);
     return () => { stopped = true; controller.abort(); clearTimeout(timer); };
-  }, [requested, attempt, enabled, file.id, file.size, file.media_version, video, api, partIndex, compatible]);
+  }, [requested, attempt, enabled, file.id, file.size, file.media_version, video, api, partIndex, compatible, sourceAdapter]);
   const ready = () => {
     setVisible(true); setPercent(100); setStage("ready");
     if (videoElement.current) {
@@ -142,7 +149,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
         {enabled && <>
           {!visible && <button className="btn btn-crayon" disabled={loading} onClick={requestPlay}>{loading ? `正在加载${label}…` : stage === "error" ? `重试查看${label}` : video ? `播放视频 · ${fmtSize(currentPart?.size || file.size)}` : `查看原图 · ${fmtSize(file.size)}`}</button>}
           {visible && compatible && <span className="preview-original-label" role="status">兼容查看版本</span>}
-          {parts.length > 1 ? <><label className="sr-only" htmlFor={`media-part-${file.id}`}>视频片段</label><select id={`media-part-${file.id}`} className="select" value={partIndex} onChange={event => choosePart(Number(event.target.value))}>{parts.map(part => <option key={part.index} value={part.index}>第 {part.index + 1} / {part.count} 段</option>)}</select><a className="btn" href={api.url(`/files/${encodeURIComponent(file.id)}/download?part=${partIndex}`)} download>下载当前无损片段</a></> : <a className="btn" href={api.url(`/files/${encodeURIComponent(file.id)}/download`)} download>下载原件</a>}
+          {parts.length > 1 ? <><label className="sr-only" htmlFor={`media-part-${file.id}`}>视频片段</label><select id={`media-part-${file.id}`} className="select" value={partIndex} onChange={event => choosePart(Number(event.target.value))}>{parts.map(part => <option key={part.index} value={part.index}>第 {part.index + 1} / {part.count} 段</option>)}</select><a className="btn" href={api.url(`/files/${encodeURIComponent(file.id)}/download?part=${partIndex}`)} download>下载当前无损片段</a></> : <a className="btn" href={sourceAdapter?.download || api.url(`/files/${encodeURIComponent(file.id)}/download`)} download>下载原件</a>}
         </>}
       </div>
       {error && <p className="detail-error media-load-error" role="alert">{error}</p>}

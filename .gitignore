@@ -60,6 +60,9 @@ node_modules/
 !/docs/storage-guide.md
 !/docs/development.md
 !/docs/assets/
+!/docs/releases/
+/docs/releases/*
+!/docs/releases/v1.0.27.md
 
 # Operating system and editor state
 .DS_Store

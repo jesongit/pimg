@@ -15,11 +15,11 @@ type Entry = { path: string; name: string; directory: boolean; size: number };
 const names: Record<string, string> = { scanning: "扫描中", ready: "等待开始", running: "导入中", paused: "已暂停", canceled: "已取消", done: "已完成", done_errors: "部分失败", failed: "失败", pending: "待处理", archiving: "归档中", duplicate: "重复跳过", skipped: "已跳过" };
 const base = "/api/admin/local-imports";
 
-export default function LocalImport({ albums, onClose }: { albums: Album[]; onClose: () => void }) {
+export default function LocalImport({ albums, onClose, paths, directoryImport=false }: { albums: Album[]; onClose: () => void; paths?: string[]; directoryImport?: boolean }) {
   const ref = useRef<HTMLDivElement>(null), toast = useToast();
   const [targetAlbums,setTargetAlbums]=useState(albums),[owners,setOwners]=useState<{id:string;username:string}[]>([]),[targetsReady,setTargetsReady]=useState(false),[targetsError,setTargetsError]=useState("");
   const [directory, setDirectory] = useState(""), [pathDraft, setPathDraft] = useState(""), [parent, setParent] = useState(""), [isDirectory, setIsDirectory] = useState(true), [entries, setEntries] = useState<Entry[]>([]), [next, setNext] = useState(0);
-  const [selected, setSelected] = useState<Set<string>>(new Set()), [album, setAlbum] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(()=>new Set(paths)), [album, setAlbum] = useState<number | null>(null);
   const hasAlbum = targetsReady && album !== null && (album === 0 || targetAlbums.some(value => value.id === album));
   const [encrypted, setEncrypted] = useState(false), [recursive, setRecursive] = useState(true), [schedule, setSchedule] = useState("now");
   const [batches, setBatches] = useState<Batch[]>([]), [id, setID] = useState<number | null>(null), [batch, setBatch] = useState<Batch | null>(null), [items, setItems] = useState<Item[]>([]);
@@ -43,7 +43,7 @@ export default function LocalImport({ albums, onClose }: { albums: Album[]; onCl
     } catch (cause: any) { if (alive.current && sequence === browseSequence.current) setError(cause.message); }
     finally { if (alive.current && sequence === browseSequence.current) setLoading(false); }
   }, []);
-  useEffect(() => { void browse(""); void history().catch(cause => setError(cause.message)); }, [browse, history]);
+  useEffect(() => { if (!paths) void browse(""); void history().catch(cause => setError(cause.message)); }, [browse, history, paths]);
   useEffect(() => {
     if (!id) return;
     let stopped = false, timer: ReturnType<typeof setTimeout>;
@@ -83,24 +83,24 @@ export default function LocalImport({ albums, onClose }: { albums: Album[]; onCl
   const outcome = batch ? [["done", "已导入"], ["duplicate", "重复跳过"], ["skipped", "已跳过"], ["failed", "失败"]].filter(([key]) => batch.counts[key]).map(([key, label]) => `${label} ${batch.counts[key]}`).join(" · ") : "";
   const visibleCount=itemFilter==="failed"?batch?.counts.failed||0:count;
   return createPortal(<><div className="overlay" onClick={close} /><div ref={ref} className="modal local-import-dialog" role="dialog" aria-modal="true" aria-labelledby="local-import-title">
-    <div className="dhead"><h2 id="local-import-title">服务器导入</h2><button type="button" className="btn btn-ghost" disabled={busy} onClick={close}>关闭</button></div>
+    <div className="dhead"><h2 id="local-import-title">{paths ? "导入到相册" : "服务器导入"}</h2><button type="button" className="btn btn-ghost" disabled={busy} onClick={close}>关闭</button></div>
     <div className="local-import-body">
       <p className="detail-hint">保留源文件，导入后归目标相册的用户所有，默认不公开。</p>
       {error && <p className="detail-error" role="alert">{error}</p>}
       {!id ? <>
-        <form className="local-import-path" onSubmit={event => { event.preventDefault(); if (pathDraft.trim()) void browse(pathDraft.trim()); }}><label htmlFor="import-path">导入路径</label><input id="import-path" className="input" placeholder="输入文件或目录路径" value={pathDraft} onChange={event => setPathDraft(event.target.value)} autoComplete="off" spellCheck={false} /><button type="submit" className="btn" disabled={loading || !pathDraft.trim()}>打开</button></form>
+        {!paths && <><form className="local-import-path" onSubmit={event => { event.preventDefault(); if (pathDraft.trim()) void browse(pathDraft.trim()); }}><label htmlFor="import-path">导入路径</label><input id="import-path" className="input" placeholder="输入文件或目录路径" value={pathDraft} onChange={event => setPathDraft(event.target.value)} autoComplete="off" spellCheck={false} /><button type="submit" className="btn" disabled={loading || !pathDraft.trim()}>打开</button></form>
         <div className="local-import-browser"><div className="local-import-browser-head">{isDirectory ? <label className="local-import-check"><input type="checkbox" aria-label="选择整个当前目录" disabled={!directory || loading} checked={selected.has(directory)} onChange={() => choose(directory)} />整个目录</label> : <span>已选择文件</span>}<button type="button" className="btn btn-sm btn-ghost" disabled={loading || !parent || parent === directory} onClick={() => void browse(parent)}>上一级</button></div>
         <div className="local-import-files" aria-label="服务器来源文件" aria-busy={loading}>
           {!entries.length && <p className="detail-hint">{loading ? "正在读取目录…" : "当前没有可显示的文件或目录。"}</p>}
           {entries.map(entry => <div className="local-import-file" key={entry.path}><input type="checkbox" aria-label={`选择${entry.directory ? "目录" : "文件"} ${entry.name}`} checked={selected.has(entry.path)} onChange={() => choose(entry.path)} />{entry.directory ? <IconFolder size={17} aria-hidden="true" /> : <IconFile size={17} aria-hidden="true" />}{entry.directory ? <button type="button" className="text-button" disabled={loading} onClick={() => void browse(entry.path)}>{entry.name}/</button> : <span>{entry.name}</span>}<small>{entry.directory ? "目录" : fmtSize(entry.size)}</small></div>)}
           {!!next && <button type="button" className="btn" disabled={loading} onClick={() => void browse(directory, next)}>加载更多</button>}
-        </div></div>
+        </div></div></>}
         <div className="local-import-target"><label htmlFor="import-album">目标相册</label><select id="import-album" className="select" required disabled={!targetsReady} value={album !== null && hasAlbum ? album : ""} onChange={event => setAlbum(event.target.value === "" ? null : Number(event.target.value))}><option value="" disabled>{targetsReady?"请选择用户的相册（必选）":"正在读取相册…"}</option><option value={0}>自己 / 未分类</option>{owners.map(owner=><optgroup key={owner.id} label={owner.username}>{targetAlbums.filter(value=>value.owner_id===owner.id&&!(owner.id==="admin:1"&&value.is_unclassified)).map(value=><option key={value.id} value={value.id}>{owner.username} / {value.name}</option>)}</optgroup>)}</select></div>
         {targetsError&&<p className="detail-error" role="alert">{targetsError}<button type="button" className="btn btn-ghost" onClick={()=>void loadTargets()}>重新读取相册</button></p>}
-        <div className="local-import-options" role="group" aria-label="导入选项"><label className="local-import-check"><input type="checkbox" checked={encrypted} onChange={event => setEncrypted(event.target.checked)} />加密归档</label><label className="local-import-check"><input type="checkbox" checked={recursive} onChange={event => setRecursive(event.target.checked)} />包含子目录</label><label className="local-import-check"><input type="checkbox" checked={schedule === "idle"} onChange={event => setSchedule(event.target.checked ? "idle" : "now")} />空闲处理</label></div>
+        <div className="local-import-options" role="group" aria-label="导入选项"><label className="local-import-check"><input type="checkbox" checked={encrypted} onChange={event => setEncrypted(event.target.checked)} />加密归档</label>{(!paths || directoryImport) && <label className="local-import-check"><input type="checkbox" checked={recursive} onChange={event => setRecursive(event.target.checked)} />包含子目录</label>}<label className="local-import-check"><input type="checkbox" checked={schedule === "idle"} onChange={event => setSchedule(event.target.checked ? "idle" : "now")} />空闲处理</label></div>
         {!!selected.size && <details className="local-import-disclosure"><summary>查看已选 {selected.size} 项</summary><ul className="local-import-selection">{[...selected].map(p => <li key={p}><span>{p}</span><button type="button" className="btn btn-ghost" onClick={() => choose(p)}>移除</button></li>)}</ul><button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>清空选择</button></details>}
       </> : !batch ? <p role="status">正在读取批次…</p> : <>
-        <div className="local-import-summary"><strong>{names[batch.state] || batch.state}</strong><span>{batch.album_id ? albums.find(value => value.id === batch.album_id)?.name || "相册已删除" : "未分类"} · {batch.encrypted ? "加密" : "未加密"} · 私有</span><span>{count} 个源文件 · {fmtSize(batch.bytes)}{batch.state !== "ready" ? ` · 已处理 ${processed} 项` : ""}</span></div>
+        <div className="local-import-summary"><strong>{names[batch.state] || batch.state}</strong><span>{batch.album_id ? targetAlbums.find(value => value.id === batch.album_id)?.name || "相册已删除" : "未分类"} · {batch.encrypted ? "加密" : "未加密"} · 私有</span><span>{count} 个源文件 · {fmtSize(batch.bytes)}{batch.state !== "ready" ? ` · 已处理 ${processed} 项` : ""}</span></div>
         {batch.error && <p className="detail-error" role="alert">{batch.error}</p>}
         <p className="detail-hint">{batch.state === "ready" ? `${batch.counts.pending || 0} 项待导入${outcome ? ` · ${outcome}` : ""}` : outcome || "正在准备…"}</p>
         {batch.task_id&&<Link className="text-button" to={`/admin/logs?group_id=${batch.task_id}`}>查看本次操作记录 #{batch.task_id}</Link>}
@@ -124,6 +124,7 @@ export default function LocalImport({ albums, onClose }: { albums: Album[]; onCl
           {batch?.state === "paused" && <button type="button" className="btn btn-crayon" disabled={busy} onClick={() => void act("resume")}>继续导入</button>}
           {batch?.state === "done_errors" && <button type="button" className="btn btn-crayon" disabled={busy} onClick={() => void act("retry")}>只重试失败项</button>}
           {batch?.state === "failed" && <button type="button" className="btn btn-crayon" disabled={busy} onClick={() => void act("retry")}>重新扫描</button>}
+          {batch && ["done", "done_errors"].includes(batch.state) && <Link className="btn" to={`/admin?owner_id=${encodeURIComponent(batch.album_id ? targetAlbums.find(value=>value.id===batch.album_id)?.owner_id || "admin:1" : "admin:1")}&album_id=${batch.album_id || "unclassified"}`} onClick={close}>查看目标相册</Link>}
           {batch && ["done", "canceled"].includes(batch.state) && <button type="button" className="btn btn-crayon" onClick={close}>完成</button>}
         </div>
       </>}

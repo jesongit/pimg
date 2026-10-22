@@ -5,6 +5,7 @@ import type { AuthUser } from "../api";
 import { SiteCtx } from "../App";
 import Library from "./Library";
 import Albums from "./Albums";
+import FileBrowser from "./FileBrowser";
 
 import Logs from "./Logs";
 import Tasks from "./Tasks";
@@ -70,6 +71,7 @@ export default function AdminApp() {
           <NavLink to={libraryHref(me,root)} end className="rail-link">图库</NavLink>
           <NavLink to={`${root}/albums`} className="rail-link">相册</NavLink>
           {admin && <>
+          <NavLink to="/admin/files" className="rail-link">文件</NavLink>
           <NavLink to="/admin/users" className="rail-link">用户</NavLink>
           <NavLink to="/admin/storage" className="rail-link">存储</NavLink>
           <NavLink to="/admin/tasks" className="rail-link" aria-describedby="task-navigation-status"><span className="task-nav-label">任务<TaskBadge /></span></NavLink>
@@ -86,6 +88,7 @@ export default function AdminApp() {
           <Route path="albums" element={<Albums />} />
           {!admin && <Route path="security" element={<div className="account-security-page"><h1>账号安全</h1><TwoFactor /></div>} />}
           {admin && <>
+          <Route path="files" element={<FileBrowser />} />
           <Route path="albums/:albumId" element={<LegacyAlbum />} />
           <Route path="tasks" element={<TaskRoute />} />
           <Route path="logs" element={<LogRoute />} />

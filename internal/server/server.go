@@ -26,7 +26,7 @@ import (
 var frontendFS = frontendembed.FS
 
 // Version 版本号。
-const Version = "1.0.26"
+const Version = "1.0.27"
 
 type Server struct {
 	Cfg                              *config.Config
@@ -173,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 202, map[string]any{"task_id": id})
 	}))
 	s.registerLocalImports(mux)
+	s.registerFileBrowser(mux)
 	mux.HandleFunc("POST /api/admin/storage/instances", s.auth(s.handleSaveStorageInstance))
 	mux.HandleFunc("PATCH /api/admin/storage/instances/{id}", s.auth(s.handleSaveStorageInstance))
 	mux.HandleFunc("POST /api/admin/storage/instances/{id}/check", s.auth(s.handleCheckStorage))

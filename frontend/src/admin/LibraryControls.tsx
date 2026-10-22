@@ -23,10 +23,9 @@ export function BrowseFilters({ children, reset, kind, state, encryption, sort, 
   </div>;
 }
 
-export function UploadActions({ dragging, onDragging, onUpload, onFiles, onImport, onCreateAlbum }: { dragging: boolean; onDragging: (value: boolean) => void; onUpload: () => void; onFiles: (files: File[]) => void; onImport?: () => void; onCreateAlbum: () => void }) {
-  return <div className="library-upload-actions" role="group" aria-label="上传、新建相册和导入">
+export function UploadActions({ dragging, onDragging, onUpload, onFiles, onCreateAlbum }: { dragging: boolean; onDragging: (value: boolean) => void; onUpload: () => void; onFiles: (files: File[]) => void; onCreateAlbum: () => void }) {
+  return <div className="library-upload-actions" role="group" aria-label="上传和新建相册">
     <button type="button" className={`btn btn-crayon library-upload-button${dragging ? " drag" : ""}`} title="选择文件并设置相册、加密选项；也可拖入文件" onClick={onUpload} onDragOver={event=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();event.dataTransfer.dropEffect="copy";onDragging(true)}}} onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))onDragging(false)}} onDrop={event=>{const files=Array.from(event.dataTransfer.files);if(files.length){event.preventDefault();event.stopPropagation();onDragging(false);onFiles(files)}}}>{glyph("M12 16V4m-4 4 4-4 4 4M5 16v4h14v-4")}上传</button>
     <button type="button" className="btn library-upload-button library-create-album-button" onClick={onCreateAlbum}>{glyph("M3 7V5h6l2 2h10v13H3V7m9 3v7m-3-3h6")}新建相册</button>
-    {onImport && <button type="button" className="btn library-upload-button" onClick={onImport}>{glyph("M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7m9 3v7m-3-3 3 3 3-3")}导入</button>}
   </div>;
 }

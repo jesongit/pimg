@@ -18,7 +18,6 @@ import useViewerNavigation from "./useViewerNavigation";
 import type { PhotoPageRange } from "./usePhotoNavigation";
 import { archiveEncrypted, copyText, fileLink, fileStatus, filesUpdated, operationBusy } from "./interactions";
 
-import LocalImport from "./LocalImport";
 import UploadDialog from "./UploadDialog";
 import { tasksUpdated } from "./TaskStatus";
 import { clientID } from "../clientID";
@@ -42,7 +41,7 @@ const PAGE_SIZE = 60;
 
 export default function Library({ fixedAlbum, onBack, onAlbumChanged }: { fixedAlbum?: Album | null; onBack?: () => void; onAlbumChanged?: () => void }) {
   const toast = useToast(), uploads = useUploads();
-  const [importing, setImporting] = useState(false), [uploading, setUploading] = useState(false), [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false), [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const { api, actor, admin, owner, readOnly, key: galleryKey } = useGallery();
   const operationRefresh=useOperationRefresh(api);
   const [users, setUsers] = useState<AlbumOwner[]>([]);
@@ -113,7 +112,7 @@ export default function Library({ fixedAlbum, onBack, onAlbumChanged }: { fixedA
   const crossMove=!!moveTarget?.owner_id&&moveTarget.owner_id!==owner;
   const moveDescription=crossMove?transferDescription(albumOwnerLabel(moveTarget!.owner_id!,users,actor),moveTarget!.name):`将选中的 ${selected.size} 项移入「${moveTarget?.name||"目标相册"}」，用户归属保持不变。${moveTarget?.displayed?"目标相册已公开，未单独隐藏的文件移入后会公开缩略图。":""}`;
   useEffect(()=>{setDateEditing(null);setConversionIDs(null);setDedupeQuery(null)},[galleryKey,params.get("q"),params.get("album_id"),params.get("kind"),params.get("state"),params.get("encryption"),params.get("sort"),params.get("seed")]);
-  const dragSelection=useDragSelection({root:resultsRoot,enabled:!readOnly&&!batchBusy&&!selectingGroup&&!detail&&!dateEditing&&!conversionIDs&&!importing&&!uploading&&files.length>0,scope:`${galleryKey}:${params.get("q")}:${params.get("album_id")}:${params.get("kind")}:${params.get("state")}:${params.get("encryption")}:${params.get("sort")}:${params.get("seed")}:${params.get("group")}`,selected,onHit:ids=>{const byId=new Map(files.map(file=>[file.id,file]));for(const id of ids){const file=byId.get(id);if(file)selectionCache.current.set(id,file)}setSelected(previous=>{const next=new Set(previous);for(const id of ids){if(next.has(id))next.delete(id);else next.add(id)}return next});anchor.current=null},onRestore:setSelected});
+  const dragSelection=useDragSelection({root:resultsRoot,enabled:!readOnly&&!batchBusy&&!selectingGroup&&!detail&&!dateEditing&&!conversionIDs&&!uploading&&files.length>0,scope:`${galleryKey}:${params.get("q")}:${params.get("album_id")}:${params.get("kind")}:${params.get("state")}:${params.get("encryption")}:${params.get("sort")}:${params.get("seed")}:${params.get("group")}`,selected,onHit:ids=>{const byId=new Map(files.map(file=>[file.id,file]));for(const id of ids){const file=byId.get(id);if(file)selectionCache.current.set(id,file)}setSelected(previous=>{const next=new Set(previous);for(const id of ids){if(next.has(id))next.delete(id);else next.add(id)}return next});anchor.current=null},onRestore:setSelected});
   const scope = useRef(restored?.query||"");
   const pageCache = useRef(new Map<number, { items: FileItem[]; total: number }>()), dataRange = useRef<PhotoPageRange | null>(restored?{query:restored.query,first:restored.first,count:restored.count}:null);
   const firstPage = Math.max(1, Math.min(1000000, Math.floor(Number(params.get("start_page"))) || 1));
@@ -320,7 +319,7 @@ export default function Library({ fixedAlbum, onBack, onAlbumChanged }: { fixedA
       {fixedAlbum&&<button className="btn btn-ghost" onClick={onBack}>返回</button>}
       {!readOnly&&<button className="btn library-dedupe-button" disabled={batchBusy||loading||!total} onClick={()=>setDedupeQuery(query)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 7h8v10H8z"/></svg>查重</button>}
       {sort==="random"&&<button className="btn btn-ghost library-shuffle-button" onClick={()=>changeFilter("sort","random")}>重新随机排列</button>}
-      {(admin || !readOnly) && <UploadActions dragging={dragging} onDragging={setDragging} onUpload={()=>void openUpload()} onFiles={openUpload} onImport={admin?()=>setImporting(true):undefined} onCreateAlbum={()=>setCreatingAlbum(true)}/>}
+      {(admin || !readOnly) && <UploadActions dragging={dragging} onDragging={setDragging} onUpload={()=>void openUpload()} onFiles={openUpload} onCreateAlbum={()=>setCreatingAlbum(true)}/>}
       </div>
     </div>
     <div className="library-filter-row">
@@ -330,7 +329,6 @@ export default function Library({ fixedAlbum, onBack, onAlbumChanged }: { fixedA
       </BrowseFilters>
     </div>
     </div>
-    {importing && admin && <LocalImport albums={albums} onClose={()=>setImporting(false)}/>}
     {dedupeQuery!==null&&<SimilarImages query={dedupeQuery} albums={albums} onClose={()=>setDedupeQuery(null)}/>}
     {creatingAlbum&&(admin||!readOnly)&&<CreateAlbum albums={albums} onClose={()=>setCreatingAlbum(false)} onCreated={async(response,existing)=>{setCreatingAlbum(false);await refreshAlbums();onAlbumChanged?.();filesUpdated();toast(response.owner_id&&response.owner_id!==actor.owner_id?"已为所选用户创建相册，可在导入时选择":existing?"相册已关联，可在相册设置中选择同步起点":"相册已创建")}}/>}
     {uploading && (admin || !readOnly) && <UploadDialog albums={albums} initialFiles={uploadFiles} onClose={()=>{setUploading(false);setUploadFiles([])}} onUpload={(files,encrypted,albumID)=>{uploads.enqueue(files,!encrypted,albumID)}}/>}
@@ -352,7 +350,7 @@ export default function Library({ fixedAlbum, onBack, onAlbumChanged }: { fixedA
     {createForSelection&&<CreateAlbum albums={albums} allowOwnerSelection={admin} onClose={()=>setCreateForSelection(false)} onCreated={async response=>{setCreateForSelection(false);await refreshAlbums();const ready=await refreshMoveAlbums();if(ready)setMoveAlbum(response.id);else toast("相册已创建，请重试读取相册后选择移动目标","err")}}/>}
     {detail && <DetailDrawer key={detail} id={detail} albums={albums} moveAlbums={moveAlbums} albumOwners={users} moveAlbumsLoading={moveAlbumsLoading} moveAlbumsError={moveAlbumsError} onRetryMoveAlbums={()=>void refreshMoveAlbums()} selected={selected.has(detail)} position={viewer.position} onToggle={file => { selectionCache.current.set(file.id, file); select(file.id); }} onClose={close} onChanged={filesUpdated} onTransferred={id=>{selectionCache.current.delete(id);setSelected(previous=>{const next=new Set(previous);next.delete(id);return next})}} conversionNotice={conversionNotices[detail]} onConverted={(nextID, notice, encrypted) => { const excluded=!!encryption&&typeof encrypted==="boolean"&&(encryption==="encrypted")!==encrypted; selectionCache.current.delete(detail); setSelected((previous) => { if (!previous.has(detail)) return previous; const next = new Set(previous); next.delete(detail); if(!excluded)next.add(nextID); return next; }); if (notice) setConversionNotices((previous) => ({ ...previous, [nextID]: notice })); setDetail(excluded?null:nextID); const nextParams = new URLSearchParams(params); if(excluded)nextParams.delete("file");else nextParams.set("file", nextID); setParams(nextParams, { replace: true }); filesUpdated(); }} onPrev={viewer.onPrev} onNext={viewer.onNext} />}
     {chronological && <TimeIndex key={`${query}|${grouping}`} groups={timeline.groups} grouping={grouping} current={timeline.visibleGroup} loading={timeline.loading} error={timeline.error} onRetry={timeline.retry} onJump={navigation.jump} />}
-    {(admin || !readOnly) && !uploading && !importing && <PasteUpload onUpload={openUpload} />}
+    {(admin || !readOnly) && !uploading && <PasteUpload onUpload={openUpload} />}
   </div>;
 }
 
