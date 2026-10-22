@@ -1,0 +1,22 @@
+# 用实际节点替换下面的占位配置，保存为同目录的 config.yaml。
+# config.yaml 含节点凭据，不提交、不放进镜像；data/ 保存内核运行缓存。
+mixed-port: 7890
+allow-lan: true
+bind-address: "*"
+mode: global
+log-level: warning
+ipv6: false
+external-controller: 127.0.0.1:9090
+proxies:
+  - name: replace-with-your-node
+    type: socks5
+    server: replace-with-your-proxy-host
+    port: 1080
+    # username: ""
+    # password: ""
+proxy-groups:
+  # 显式限定 GLOBAL 只有这个节点，避免默认组包含 DIRECT。
+  - name: GLOBAL
+    type: select
+    proxies:
+      - replace-with-your-node

@@ -1,0 +1,36 @@
+# 与 docker-compose.yml 一起使用；代理配置见 deploy/proxy/README.md。
+services:
+  pimg:
+    environment:
+      PIMG_STORAGE_PROXY_URL: http://proxy:7890
+    networks:
+      - storage
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+  proxy:
+    image: metacubex/mihomo:v1.19.32@sha256:bac1a74de365ea59270ba134016762c6be05654d55246518de256113bd1c225e
+    restart: unless-stopped
+    command: ["-d", "/var/lib/mihomo", "-f", "/etc/mihomo/config.yaml"]
+    volumes:
+      - type: bind
+        source: ./deploy/proxy/config.yaml
+        target: /etc/mihomo/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./deploy/proxy/data:/var/lib/mihomo
+    networks:
+      - storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/version"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  storage: {}

@@ -1,0 +1,68 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+config.yaml
+config.*.yaml
+!config.example.yaml
+*.key
+*.pem
+*.p12
+*.pfx
+session.enc
+
+# User media, databases, runtime files and local verification
+/data*/
+/runtime/
+/imports/
+/cache/
+/previews/
+/diagnostics/
+/logs/
+/tmp/
+/migration/
+/audit/
+/acceptance/
+.impeccable/
+/PRODUCT.md
+/DESIGN.md
+/TESTING.md
+.pimg-dev.pids
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+*.log
+*.pid
+*.tmp
+*.bak
+
+# Dependencies and build outputs
+node_modules/
+/frontend/dist/
+/dist/
+*.exe
+*.exe~
+*.tsbuildinfo
+.vite/
+
+# Deployment-local records and retired worker tooling
+/deploy/*
+!/deploy/proxy/
+/deploy/proxy/*
+!/deploy/proxy/config.example.yaml
+/workers/
+
+# Only public guides and reviewed screenshots are published.
+/docs/*
+!/docs/usage.md
+!/docs/deployment.md
+!/docs/storage-guide.md
+!/docs/development.md
+!/docs/assets/
+
+# Operating system and editor state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

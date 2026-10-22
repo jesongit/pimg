@@ -1,0 +1,12 @@
+.batch-conversion-dialog{width:min(500px,calc(100vw - 24px));overflow:auto;padding:0}
+.batch-conversion-dialog .dhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--hairline)}
+.batch-conversion-dialog .dhead h2{margin:0;font-size:18px}.batch-conversion-dialog form{margin:0;min-width:0}
+.batch-conversion-fields{display:grid;gap:12px;margin:0;padding:20px;border:0;min-width:0}
+.batch-conversion-fields p{margin:0;line-height:1.7}.batch-conversion-fields>label{font-weight:600}
+.batch-conversion-fields>.select{width:100%;min-width:0}.batch-conversion-summary{font-variant-numeric:tabular-nums;color:var(--paper)}
+.batch-conversion-issues{font-size:12px;line-height:1.7;min-width:0}.batch-conversion-issues summary{cursor:pointer;color:var(--ink-2)}
+.batch-conversion-issues ul{list-style:none;padding:0;margin:10px 0 0;max-height:180px;overflow:auto}
+.batch-conversion-issues li{display:grid;gap:2px;padding:8px 0;border-bottom:1px solid var(--hairline-soft);overflow-wrap:anywhere}
+.batch-conversion-issues strong{font-weight:550}.batch-conversion-issues span{color:var(--ink-2)}
+.batch-conversion-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:12px 20px;border-top:1px solid var(--hairline)}
+@media(max-width:760px){.batch-conversion-dialog .dhead{padding:12px 16px}.batch-conversion-fields{padding:16px}.batch-conversion-fields>.select{font-size:16px}.batch-conversion-actions{padding:12px 16px}}

@@ -1,0 +1,48 @@
+.users-page { max-width: 1280px; margin: 0 auto; }
+.users-heading { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4); margin-bottom:var(--sp-5); }
+.users-heading h1 { font-size:var(--fs-xl); margin:0 0 var(--sp-1); }
+.users-heading p,.users-note,.users-editor-note { color:var(--ink-2); line-height:1.6; margin:0; }
+.users-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:var(--sp-3); margin-bottom:var(--sp-4); }
+.users-search { width:min(320px,100%); }
+.users-filter { display:flex; align-items:center; gap:var(--sp-2); }
+.users-filter select { width:auto; }
+.users-count { margin-right:auto; color:var(--ink-2); font-size:var(--fs-s); }
+.users-registry { overflow:hidden; background:var(--raised); border-radius:var(--r-m); }
+.users-table { width:100%; table-layout:fixed; border-collapse:collapse; }
+.users-table th,.users-table td { padding:18px 16px; text-align:left; vertical-align:middle; border-bottom:1px solid var(--hairline-soft); }
+.users-table thead th { padding-block:12px; color:var(--ink-2); background:var(--ground-2); font-size:var(--fs-s); font-weight:500; }
+.users-table tbody tr:last-child>th,.users-table tbody tr:last-child>td { border-bottom:0; }
+.users-account-column { width:17%; }.users-status-column { width:8%; }.users-usage-column { width:18%; }.users-space-column { width:27%; }.users-actions-column { width:30%; }
+.users-table th.users-actions-heading { text-align:right; }
+.users-table .users-account-cell { font-weight:400; }
+.users-name { font-size:var(--fs-m); font-weight:600; overflow-wrap:anywhere; }
+.users-role { display:block; margin-top:4px; color:var(--ink-2); font-size:var(--fs-s); }
+.users-usage { display:flex; gap:6px; flex-wrap:wrap; color:var(--paper); font-size:var(--fs-s); margin:0; font-variant-numeric:tabular-nums; }
+.users-usage>span { color:var(--ink-3); }
+.users-secondary { display:block; font-size:var(--fs-s); color:var(--ink-2); margin-top:var(--sp-1); }
+.users-status { color:var(--ok); white-space:nowrap; font-size:var(--fs-s); }
+.users-status.is-disabled { color:var(--ink-2); }
+.users-space { display:flex; gap:10px; margin:0; color:var(--ink-2); font-size:var(--fs-s); overflow-wrap:anywhere; }
+.users-space>* { min-width:0; }
+.users-space strong { font-weight:400; color:var(--paper); }
+.users-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.users-actions>.btn { white-space:nowrap; }
+.users-pending { font-size:var(--fs-s); color:var(--warn); margin:var(--sp-2) 0 0; }
+.users-error-text { color:var(--err); font-size:var(--fs-s); margin:var(--sp-2) 0 0; overflow-wrap:anywhere; }
+.users-error { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); color:var(--err); margin-bottom:var(--sp-4); }
+.users-note { margin-top:var(--sp-4); font-size:var(--fs-s); }
+.users-loading { padding:var(--sp-4); }
+.users-editor { width:min(460px,calc(100vw - 32px)); max-height:calc(100dvh - 40px); overflow-y:auto; }
+.users-editor header { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); margin-bottom:var(--sp-4); }
+.users-editor h2 { font-size:var(--fs-l); margin:0; }
+.users-editor form { display:flex; flex-direction:column; gap:var(--sp-4); }
+.users-editor label { display:flex; flex-direction:column; gap:var(--sp-2); }
+.users-editor-account { margin:0; color:var(--ink-2); overflow-wrap:anywhere; }
+.users-editor footer { display:flex; justify-content:flex-end; gap:var(--sp-2); margin-top:var(--sp-2); }
+
+.users-table th,.users-table td{padding:14px 12px;height:62px}.users-account-column{width:13%}.users-role-column{width:8%}.users-status-column{width:7%}.users-usage-column{width:20%}.users-space-column{width:21%}.users-actions-column{width:31%}.users-account-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.users-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}.users-role{display:inline;margin:0 0 0 8px;font-size:11px}.users-usage-cell{white-space:nowrap;font-size:var(--fs-s);font-variant-numeric:tabular-nums}.users-usage{display:inline-flex;flex-wrap:nowrap}.users-size{color:var(--ink-2);margin-left:10px}.users-space-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.users-space{display:inline;color:var(--ink-2)}.users-space strong{font-weight:400}.users-space-warning{font-size:11px;color:var(--warn);margin-left:6px}.users-actions{flex-wrap:nowrap;gap:4px}.users-actions .btn{padding-inline:8px}@media(max-width:1000px){.users-table .users-size{display:none}.users-usage-column{width:17%}.users-space-column{width:18%}.users-actions-column{width:36%}.users-account-column{width:12%}.users-role-column{width:9%}.users-status-column{width:8%}.users-role{display:none}}
+@media(max-width:760px){.users-page .input,.users-editor .input{font-size:16px}.users-heading{align-items:flex-start}.users-search{flex:1;min-width:160px}.users-count{margin-right:0}.users-table colgroup,.users-table thead{display:none}.users-table,.users-table tbody{display:block}.users-table .users-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px;border-bottom:1px solid var(--hairline-soft);align-items:center}.users-table .users-row:last-child{border-bottom:0}.users-table .users-row>th,.users-table .users-row>td{padding:0;border:0;height:auto;min-width:0}.users-table .users-status-cell{display:block;text-align:right}.users-table .users-usage-cell,.users-table .users-space-cell{grid-column:1/-1;white-space:normal}.users-table .users-usage-cell{font-size:var(--fs-s)}.users-table .users-size{display:inline}.users-table .users-actions-cell{grid-column:1/-1;padding-top:4px}.users-actions .btn{padding-inline:6px}.users-actions{gap:6px;justify-content:flex-start;flex-wrap:wrap}.users-table .users-name{font-size:var(--fs-s)}.users-toolbar>.btn{margin-left:auto}}
+
+.users-role-cell{white-space:nowrap;color:var(--ink-2);font-size:var(--fs-s)}
+.users-editor .users-delete-confirm{display:flex;flex-direction:row;align-items:center;gap:8px;min-height:var(--control-height)}
+@media(max-width:760px){.users-table .users-account-cell{grid-column:1}.users-table .users-role-cell{grid-column:2;grid-row:1;text-align:right}.users-table .users-status-cell{grid-column:1/-1;text-align:left}}

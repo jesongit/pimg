@@ -1,0 +1,14 @@
+.two-factor{margin-top:28px;padding-top:24px;border-top:1px solid var(--hairline);max-width:720px;min-width:0}
+.two-factor-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:8px}
+.two-factor-heading h2{font-size:16px;font-weight:600}.two-factor-heading>span{font-size:13px;color:var(--ink-2)}
+.two-factor p{font-size:13px;color:var(--ink-2);line-height:1.65;margin:8px 0;max-width:68ch}
+.two-factor .two-factor-error{color:var(--err)}.two-factor .two-factor-notice{color:var(--ok)}
+.two-factor fieldset{border:0;padding:0;margin:16px 0 0;min-width:0}.two-factor fieldset>label{display:block;margin:14px 0 5px;font-size:13px}
+.two-factor fieldset>.input{width:100%;max-width:380px}.two-factor-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.two-factor-enrollment{display:grid;grid-template-columns:208px minmax(0,1fr);gap:20px;align-items:center;margin-bottom:20px}
+.two-factor-enrollment img{width:208px;height:208px;image-rendering:pixelated;background:#fff}.two-factor h3{font-size:14px;font-weight:600}
+.two-factor-secret{display:block;overflow-wrap:anywhere;user-select:all;font-size:14px;line-height:1.8}
+.two-factor-recovery{margin-top:18px}.two-factor-recovery ul{list-style:none;padding:0;margin:16px 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 20px}
+.two-factor-recovery code{font-size:13px;user-select:all;overflow-wrap:anywhere}.two-factor-saved{display:flex;align-items:center;gap:8px;margin:18px 0;font-size:13px}
+.two-factor .two-factor-scope{margin-top:20px;font-size:12px}.account-security-page{max-width:800px;margin:0 auto;padding:24px}.account-security-page>h1{font-size:25px}.account-security-page .two-factor{margin-top:16px}
+@media(max-width:600px){.two-factor-enrollment{grid-template-columns:minmax(0,1fr);gap:12px}.two-factor-recovery ul{grid-template-columns:minmax(0,1fr)}.two-factor fieldset>.input{max-width:none;font-size:16px}.account-security-page{padding:18px 0}.two-factor-actions>.btn{flex:1;white-space:normal}.two-factor-recovery code{font-size:14px}}

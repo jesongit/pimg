@@ -1,0 +1,28 @@
+.local-import-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);display:flex;flex-direction:column;padding:0;overflow:hidden}
+.local-import-dialog .dhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--hairline-soft);flex-shrink:0}
+.local-import-dialog .dhead h2{margin:0;font-size:var(--fs-l)}
+.local-import-body{min-height:0;padding:14px 20px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:10px}
+.local-import-body>*{flex-shrink:0}
+.local-import-body p{margin:0}.local-import-history,.local-import-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.local-import-history .select{flex:1;min-width:160px;max-width:100%}
+.local-import-path{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}.local-import-path .input{min-width:0;width:100%}
+.local-import-browser{border:1px solid var(--hairline);border-radius:var(--r-s);overflow:hidden;background:var(--sunken)}
+.local-import-browser-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 10px;border-bottom:1px solid var(--hairline-soft);font-size:var(--fs-s)}
+.local-import-files{max-height:190px;overflow:auto;min-height:72px}
+.local-import-files>p{padding:16px}.local-import-file{display:flex;gap:10px;align-items:center;padding:6px 10px;min-height:38px;border-bottom:1px solid var(--hairline-soft)}
+.local-import-file:last-child{border-bottom:0}.local-import-file>span,.local-import-file>button{flex:1;text-align:left;min-width:0;overflow-wrap:anywhere;white-space:normal}.local-import-file>svg{flex-shrink:0;color:var(--ink-2)}.local-import-file small{color:var(--ink-2);flex-shrink:0}
+.local-import-target{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center}.local-import-target .select{width:100%;min-width:0}.local-import-check{display:flex;align-items:center;gap:6px;min-height:var(--control-height)}
+.local-import-options{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;font-size:var(--fs-s)}
+.local-import-disclosure>summary{cursor:pointer;color:var(--ink-2);padding:4px 0}.local-import-disclosure[open]>summary{margin-bottom:10px}.local-import-extra{display:flex;flex-direction:column;gap:8px}.local-import-footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:12px 20px;border-top:1px solid var(--hairline-soft);flex-shrink:0}.local-import-footer>span{color:var(--ink-2);font-size:var(--fs-s)}.local-import-footer>.local-import-actions{margin-left:auto}
+.local-import-summary{display:flex;flex-direction:column;gap:6px}.local-import-summary>span{color:var(--ink-2)}
+.local-import-results{border-top:1px solid var(--hairline)}.local-import-result{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.8fr);gap:16px;padding:12px 0;border-bottom:1px solid var(--hairline-soft)}
+.local-import-result strong{font-size:14px;font-weight:500;overflow-wrap:anywhere}.local-import-result small{display:block;color:var(--ink-2);margin-top:4px}.local-import-result p{margin-top:4px;overflow-wrap:anywhere}
+.local-import-selection{padding-left:0;list-style:none;max-height:150px;overflow:auto}.local-import-selection li{display:flex;gap:8px;align-items:center}.local-import-selection li span{flex:1;overflow-wrap:anywhere}
+@media(max-width:600px){.local-import-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.local-import-dialog .dhead,.local-import-body,.local-import-footer{padding:12px}.local-import-result{grid-template-columns:minmax(0,1fr);gap:6px}.local-import-history{align-items:stretch}.local-import-history .select{flex-basis:100%}.local-import-files{max-height:170px}.local-import-options{column-gap:12px}.local-import-path{grid-template-columns:minmax(0,1fr) auto}.local-import-path>label{grid-column:1/-1}.local-import-path .input{grid-column:1}}
+@media(max-width:760px){
+ .library.has-selection .batch-bar{left:10px;right:10px;max-width:calc(100vw - 20px);max-height:50dvh;overflow-y:auto}
+ .library .batch-bar .batch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;gap:6px}
+ .library .batch-bar .batch-actions>*{width:100%;min-width:0;max-width:none;min-height:var(--control-height);padding:var(--control-py) 8px}
+ .library .batch-bar .batch-actions .batch-unpublish,.library .batch-bar .batch-actions .select[aria-label="批量移动相册"]{grid-column:1/-1}
+ .library.has-selection:has(>.batch-bar){padding-bottom:280px}
+}

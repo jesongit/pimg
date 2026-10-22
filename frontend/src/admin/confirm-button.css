@@ -1,0 +1,13 @@
+.confirm-button-text{display:inline-grid;grid-template-areas:"label";align-items:center;justify-items:center;min-width:0}
+.confirm-button-text>span{grid-area:label;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.confirm-button-text>.confirm-button-measure{visibility:hidden;pointer-events:none}
+.confirm-button.is-confirming{color:var(--err);border-color:var(--err);background:var(--raised)}
+.confirm-button.is-confirming:hover{color:var(--err);border-color:var(--err);background:var(--ground)}
+.confirm-button-hint{position:fixed;z-index:4000;width:max-content;max-width:min(320px,calc(100vw - 24px));padding:9px 12px;border:1px solid var(--hairline);border-radius:var(--r-s,6px);background:var(--raised);color:var(--paper);box-shadow:0 4px 16px #20293818;font-size:12px;line-height:1.65;overflow-wrap:anywhere;pointer-events:none}
+.choice-confirm-slot{display:inline-grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;vertical-align:middle;min-width:0;max-width:100%}
+.choice-confirm-slot>*{min-width:0}
+.detail-edit>.choice-confirm-slot{width:100%}
+.library .batch-actions>.choice-confirm-slot{padding:0;min-height:var(--control-height)}
+.library .batch-actions>.choice-confirm-slot>.select{width:100%;max-width:235px}
+.library .batch-actions>.choice-confirm-slot>.btn{min-height:var(--control-height);padding:var(--control-py) 10px;font-size:12px}
+@media(max-width:760px){.library .batch-bar .batch-actions>.choice-confirm-slot{padding:0;grid-column:1/-1}.library .batch-bar .batch-actions>.choice-confirm-slot>.select[aria-label="批量移动相册"]{max-width:none;grid-column:auto}}

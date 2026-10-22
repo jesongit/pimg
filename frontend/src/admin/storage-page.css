@@ -1,0 +1,64 @@
+.storage-page { max-width: 1440px; margin-inline: auto; }
+.storage-page .users-heading p { max-width: 70ch; color: var(--ink-2); margin-block: 8px 0; }
+.storage-page-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 24px; }
+.storage-registry { overflow-x:auto; }
+.storage-registry .users-table { width:100%; min-width:1120px; table-layout:fixed; }
+.storage-col-name { width:20%; }.storage-col-priority { width:6%; }.storage-col-health { width:26%; }.storage-col-roles { width:16%; }.storage-col-mode { width:22%; }.storage-col-actions { width:10%; }
+.storage-registry .users-table th,.storage-registry .users-table td { padding:var(--sp-2) var(--sp-3); height:52px; vertical-align:middle; white-space:nowrap; font-size:var(--fs-s); }
+.storage-registry .users-table thead th { height:40px; }
+.storage-instance,.storage-mode,.storage-health,.storage-metrics { display:flex; align-items:center; gap:var(--sp-2); min-width:0; }
+.storage-registry .users-name { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--fs-s); }
+.storage-driver,.storage-inline-secondary,.storage-metrics { color:var(--ink-2); font-weight:400; }
+.storage-driver { flex-shrink:0; font-size:11px; }
+.storage-priority-cell,.storage-metrics { font-variant-numeric:tabular-nums; }
+.storage-health { gap:6px; }
+.storage-metrics { gap:4px; white-space:nowrap; font-size:11px; }
+.storage-metric-divider { color:var(--ink-3); }
+.storage-health-trigger { display:inline-flex; align-items:center; gap:2px; flex-shrink:0; min-height:var(--control-height); padding:0; border-radius:var(--r-xs); font-size:var(--fs-s); color:var(--ink-2); }
+.storage-health-trigger.is-available { color:var(--ok); }.storage-health-trigger.is-unavailable { color:var(--err); }
+.storage-health-trigger:hover { text-decoration:underline; text-underline-offset:3px; }
+.storage-health-trigger>svg { flex-shrink:0; }
+.storage-registry .users-table .storage-actions-heading { text-align:right; }
+.storage-registry .users-actions { flex-wrap:nowrap; justify-content:flex-end; }
+.storage-health-popover { position:fixed; z-index:130; overflow:auto; padding:var(--sp-3); background:var(--raised); color:var(--paper); border-radius:var(--r-m); box-shadow:var(--shadow-pop); font-size:var(--fs-s); }
+.storage-health-popover header { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
+.storage-health-name { overflow-wrap:anywhere; margin:var(--sp-2) 0 var(--sp-3); color:var(--ink-2); }
+.storage-health-popover dl { display:grid; gap:var(--sp-2); margin:0; }
+.storage-health-popover dl>div { display:grid; grid-template-columns:72px minmax(0,1fr); gap:var(--sp-2); }
+.storage-health-popover dt { color:var(--ink-2); }.storage-health-popover dd { margin:0; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.storage-health-error { margin:var(--sp-3) 0 0; color:var(--err); overflow-wrap:anywhere; }
+.storage-editor-shade { position: fixed; inset: 0; z-index: 110; display: grid; justify-items: end; background: rgb(20 27 38 / .32); }
+.storage-editor { width: min(620px,100vw); height: 100%; overflow-y: auto; background: var(--raised); padding: 28px; box-shadow: -8px 0 32px rgb(20 27 38 / .12); }
+.storage-editor header, .storage-editor footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.storage-editor header { margin-block-end: 24px; }
+.storage-editor fieldset > label { display: grid; gap: 8px; margin-block: 20px; }
+.storage-editor fieldset { border: 0; padding: 0; min-width: 0; }
+.storage-editor fieldset > .storage-check { display: flex; align-items: center; gap: 8px; }
+.storage-editor small { color: var(--ink-2); line-height: 1.5; }
+.storage-editor footer { position: sticky; bottom: -28px; padding-block: 20px; margin-block-start: 24px; background: var(--raised); border-top: 1px solid var(--hairline-soft); }
+.storage-page .storage-workbench { display: block; }
+.storage-page .storage-category { max-width: 100%; }
+@media (max-width: 760px) {
+ .storage-page .users-heading { align-items: flex-start; gap: 16px; }
+ .storage-registry { overflow:visible; }
+ .storage-registry .users-table { min-width:0; }
+ .storage-registry .users-table tbody tr { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; padding:var(--sp-3); border-bottom:1px solid var(--hairline-soft); }
+ .storage-registry .users-table tbody tr:last-child { border-bottom:0; }
+ .storage-registry .users-table tr>th,.storage-registry .users-table tr>td { padding:0; height:auto; border:0; min-width:0; white-space:normal; }
+ .storage-registry .users-table .storage-instance-cell,.storage-registry .users-table .storage-health-cell,.storage-registry .users-table .storage-mode-cell { grid-column:1 / -1; }
+ .storage-registry .users-table .storage-priority-cell { grid-column:1; color:var(--ink-2); }
+ .storage-registry .users-table .storage-roles-cell { grid-column:1; grid-row:4; color:var(--ink-2); }
+ .storage-registry .users-table .storage-actions-cell { grid-column:2; grid-row:4 / span 2; align-self:end; }
+ .storage-registry .storage-instance { flex-wrap:wrap; gap:4px 8px; }
+ .storage-registry .users-name { white-space:normal; overflow-wrap:anywhere; }
+ .storage-registry .storage-health { flex-wrap:wrap; gap:0 8px; }
+ .storage-registry .storage-metrics { font-size:var(--fs-s); }
+ .storage-registry .storage-mode { flex-wrap:wrap; gap:4px 8px; }
+ .storage-registry .storage-priority-cell::before { content:"优先级 "; }
+ .storage-registry .storage-roles-cell::before { content:"用途 "; }
+ .storage-registry .users-actions { gap:4px; }
+ .storage-page .users-heading { flex-wrap: wrap; }
+ .storage-editor { padding: 20px; }
+}
+
+.storage-page nav[hidden] { display: none; }

@@ -1,0 +1,41 @@
+/* Keep navigation, gallery actions and the timeline on the same content edge. */
+.admin {
+  --gallery-toolbar-inset:14px;
+  --gallery-timeline-width:64px;
+  --gallery-timeline-gap:16px;
+  --gallery-grip-width:20px;
+  --workspace-edge:max(var(--workspace-gutter),calc((100vw - var(--workspace-max))/2 + var(--workspace-gutter)));
+}
+.admin .main:has(.library.has-timeline) { padding-right:var(--workspace-gutter); }
+.admin-utilities .account-logout { padding-inline-end:0; }
+.library-tools-surface {
+  position:sticky;
+  top:var(--admin-header-height);
+  z-index:60;
+  display:flow-root;
+  background:var(--ground);
+  margin-inline:calc(-1 * var(--gallery-toolbar-inset));
+  padding-inline:var(--gallery-toolbar-inset);
+}
+.library.has-timeline>.library-results,
+.library.has-timeline>.empty,
+.library.has-timeline>.library-notice,
+.library.has-timeline>.gallery-owner-notice,
+.library.has-timeline>.library-pagination { margin-inline-end:calc(var(--gallery-timeline-width) + var(--gallery-timeline-gap)); }
+.library .time-index {
+  --timeline-content-top:calc(var(--admin-header-height) + 12px + var(--library-tools-height,64px) + 24px);
+  --timeline-height:min(clamp(200px,40dvh,360px),max(96px,calc(100dvh - var(--timeline-content-top) - 24px)));
+  top:max(50dvh,calc(var(--timeline-content-top) + var(--timeline-height)/2));
+  right:var(--workspace-edge);
+  width:var(--gallery-timeline-width);
+  height:var(--timeline-height);
+}
+.library .time-thumb { left:auto; right:0; width:32px; justify-items:end; }
+.library .time-index-message { position:absolute; right:0; bottom:calc(100% + 8px); transform:none; align-items:flex-end; white-space:nowrap; z-index:1; }
+.library .time-grip { width:var(--gallery-grip-width); }
+.library .time-tick { left:auto; right:calc((var(--gallery-grip-width) - 6px)/2); width:6px; }
+@media(max-width:760px) {
+  .admin { --workspace-gutter:18px; --gallery-toolbar-inset:10px; --gallery-timeline-width:46px; --gallery-timeline-gap:12px; --gallery-grip-width:17px; }
+  .library .time-index { --timeline-height:min(clamp(180px,32dvh,280px),max(96px,calc(100dvh - var(--timeline-content-top) - 24px))); }
+  .library .time-thumb { width:24px; }
+}

@@ -1,0 +1,9 @@
+:is(.library-toolbar,.library-filter-row) .cycle-filter{display:flex;align-items:center;justify-content:space-between;gap:6px;flex:0 0 auto;min-height:var(--control-height);height:var(--control-height);padding:4px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--paper);font-size:12px;font-weight:400;line-height:20px;white-space:nowrap;cursor:pointer}
+.cycle-filter-label{display:inline-grid;grid-template-areas:"label";min-width:0;text-align:left}
+.cycle-filter-label>span{grid-area:label;white-space:nowrap}
+.cycle-filter-measure{visibility:hidden;pointer-events:none;font-weight:550}
+.cycle-filter>svg{flex-shrink:0;color:var(--ink-2)}
+:is(.library-toolbar,.library-filter-row) .cycle-filter:hover:not(:disabled){background:var(--ground-2)}
+:is(.library-toolbar,.library-filter-row) .cycle-filter.is-active{background:var(--crayon-soft);border-color:var(--crayon-line);font-weight:550}
+.cycle-filter:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+:is(.library-toolbar,.library-filter-row) .cycle-filter:disabled{opacity:.5;cursor:default}

@@ -1,0 +1,9 @@
+.library-results.is-drag-selecting,.library-results.is-selection-mode{user-select:none;-webkit-user-select:none;cursor:cell}
+.library-results.is-selection-mode{touch-action:none}
+.library-results.is-selection-mode .card-open,.library-results.is-drag-selecting .card-open{cursor:cell}
+.batch-date-dialog{width:min(440px,calc(100vw - 24px))}
+.batch-date-fields{display:grid;gap:12px;padding:20px}
+.batch-date-fields label{font-weight:600}
+.batch-date-fields .input{width:100%;min-width:0;font-variant-numeric:tabular-nums}
+.batch-date-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--hairline)}
+@media(max-width:760px){.batch-date-fields .input{font-size:16px}}

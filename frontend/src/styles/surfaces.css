@@ -1,0 +1,102 @@
+/* Surface hierarchy: cool canvas, slate navigation, bright working content.
+   Geometry and compact controls remain owned by their component styles. */
+.admin-topbar {
+  background: var(--chrome);
+  border-bottom-color: var(--hairline);
+}
+.admin-topbar .brand, .public-brand { color: var(--paper); }
+.admin-nav { align-items: center; gap: 8px; }
+.admin-nav .rail-link {
+  align-self: center;
+  min-height: var(--control-height);
+  padding-inline: 12px;
+  border-radius: 6px;
+}
+.admin-nav .rail-link:hover { background: var(--raised-2); }
+.admin-nav .rail-link.active {
+  background: var(--raised);
+  color: var(--crayon-hi);
+  font-weight: 550;
+}
+.admin-nav .rail-link.active::after { content: none; }
+.account-menu summary { padding-inline: 8px; border-radius: 6px; }
+.account-menu summary:hover { background: var(--raised-2); }
+
+.library-tools-surface {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--tool-surface);
+  border-radius: var(--r-m);
+}
+.library-tools-surface .library-browser-head { margin-bottom: 8px; }
+.library-tools-surface .library-browse-bar { margin-bottom: 0; }
+.library-tools-surface .library-search > .input {
+  background: var(--raised);
+  border-color: var(--hairline);
+}
+.library-tools-surface .library-search > .input:focus { border-color: var(--primary); }
+.library-tools-surface .browse-filter > .select:hover:not(:disabled) { background: var(--raised); }
+.library-tools-surface .browse-active-filters { margin-top: 8px; margin-bottom: 0; }
+.library .photo-group-heading h2 { color: var(--paper); }
+.time-grip { background: var(--crayon-soft); border-color: var(--crayon-line); }
+
+.workspace-rail, .settings-workbench .settings-index { border-right: 0; }
+.workspace-rail > .selected,
+.settings-workbench .settings-index > button[aria-current=page] {
+  background: var(--crayon-soft);
+  color: var(--crayon-hi);
+  font-weight: 550;
+}
+.workspace-stage,
+.settings-workbench .settings-content,
+.token-page .token-registry {
+  background: var(--raised);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-m);
+  padding: 18px;
+  min-width: 0;
+}
+.workspace-stage .workspace-toolbar,
+.settings-workbench .settings-section-heading { border-bottom-color: var(--hairline-soft); }
+.settings-workbench .settings-actions { background: var(--raised); }
+.settings-workbench .settings-section { background: transparent; }
+.settings-workbench .settings-index { padding-right: 0; }
+.settings-workbench .settings-index > button:hover { background: var(--ground-2); }
+.token-page .token-registry > .panel,
+.token-page .token-registry > .empty { border-top: 0; }
+.token-page .token-registry .sheet-table th { background: var(--sunken); }
+.workspace-stage .sheet-table th { background: var(--sunken); }
+
+.exhibition, .signin { background: var(--canvas); }
+.public-header-shell { background: var(--chrome); border-bottom: 1px solid var(--hairline); }
+.public-header-shell + .public-main { padding-top: 20px; }
+.exhibit-intro { padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+.exhibit-intro > span { color: var(--crayon-hi); font-variant-numeric: tabular-nums; }
+.exhibit-open { border-radius: 8px; border: 1px solid var(--hairline); background: var(--ground-2); }
+.exhibit-frame figcaption { padding-inline: 2px; }
+.site-footer:not(.site-footer-preview) { border-top: 1px solid var(--hairline); margin-top: 24px; }
+.footer-icon-link { background: var(--ground-2); color: var(--ink-2); }
+.footer-icon-link:hover { background: var(--crayon-soft); color: var(--crayon-hi); }
+.signin-layout { padding-top: 24px; }
+.signin-form {
+  max-width: 384px;
+  padding: 26px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-l);
+  background: var(--raised);
+}
+.signin-photo { border-radius: var(--r-l); }
+
+@media(max-width:760px) {
+  .admin-nav { gap: 5px; }
+  .admin-nav .rail-link { padding-inline: 10px; min-width: 0; }
+  .library-tools-surface { padding: 10px; margin-bottom: 12px; }
+  .library-tools-surface .library-browse-bar { gap: 6px; }
+  .workspace-stage,
+  .settings-workbench .settings-content,
+  .token-page .token-registry { padding: 14px; }
+  .settings-workbench .settings-index { background: var(--canvas); padding-right: 0; }
+  .public-header-shell + .public-main { padding-top: 14px; }
+  .signin-layout { padding-top: 16px; }
+  .signin-form { padding: 22px; }
+}

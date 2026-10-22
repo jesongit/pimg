@@ -1,0 +1,8 @@
+.select-all-control,.select-all-control.group-select{display:inline-flex;align-items:center;gap:6px;min-height:var(--control-height);padding:4px 6px;border:0;border-radius:6px;background:transparent;color:var(--ink-2);font-size:12px;line-height:20px;white-space:nowrap}
+.select-all-control>svg{flex-shrink:0}
+.select-all-control:hover:not(:disabled){background:var(--crayon-soft);color:var(--crayon-hi)}
+.select-all-control[aria-checked=true],.select-all-control[aria-checked=mixed]{color:var(--crayon-hi)}
+.select-all-control[aria-checked=true] circle,.select-all-control[aria-checked=mixed] circle{fill:var(--primary);stroke:var(--primary)}
+.select-all-control[aria-checked=true] path,.select-all-control[aria-checked=mixed] path{stroke:var(--raised)}
+.select-all-control:disabled{opacity:.5;cursor:default}
+@media(max-width:760px){.select-all-control,.select-all-control.group-select{font-size:11px;padding-inline:4px}}

@@ -1,0 +1,7 @@
+.file-encryption{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:18px;height:18px;border-radius:4px;color:#2f6d46;background:#eef7f0;pointer-events:none}
+.file-encryption[data-encryption-setting=plaintext]{color:#8c5819;background:#fff4df}
+.file-encryption[data-encryption-setting=unknown]{color:#5e6773;background:#f0f2f5}
+.file-encryption svg{width:12px;height:12px;display:block}
+.library .media>.file-encryption{position:absolute;top:6px;right:6px}
+.detail-docked .detail-status-tag.file-encryption-setting.is-plaintext{color:#ebd5a4;background:#3a3225}
+.detail-status-tag.file-encryption-setting>.file-encryption{width:14px;height:14px;color:inherit;background:transparent}

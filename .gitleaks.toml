@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public AEAD additional-authenticated-data identifier, not encryption key material"
+condition = "AND"
+paths = ['''(^|/)internal/cryptox/crypto\.go$''']
+regexTarget = "line"
+regexes = ['''^const aadKeyWrap = "pimg-key"$''']

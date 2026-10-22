@@ -1,0 +1,21 @@
+# Only application sources and lockfiles belong in the build context.
+*
+!Dockerfile
+!.dockerignore
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!frontend/
+!frontend/**
+
+# Install Linux dependencies and build assets inside their respective stages.
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env*
+**/*.tsbuildinfo
+**/.DS_Store
+**/Thumbs.db

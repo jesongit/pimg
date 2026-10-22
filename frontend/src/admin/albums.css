@@ -1,0 +1,13 @@
+.albums-table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}
+.albums-table th,.albums-table td{padding:18px 20px;border-bottom:1px solid var(--hairline-soft);vertical-align:middle}
+.albums-table thead th{font-size:12px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.albums-table tbody th{font-weight:500;min-width:170px;overflow-wrap:anywhere}
+.albums-table tbody td:last-child{width:43%}
+.album-count{font-variant-numeric:tabular-nums;white-space:nowrap}
+.album-fixed-label{display:block;color:var(--ink-2);font-size:12px;font-weight:400;margin-top:5px}
+.album-display-state{color:var(--ink-2);white-space:nowrap}
+.album-display-state.is-enabled{color:var(--ok)}
+.album-display-state.is-enabled:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:2px}
+.album-inline-rename{display:flex;gap:6px;flex-wrap:wrap}
+.album-inline-rename .input{width:100%;min-width:130px}
+@media(max-width:760px){.albums-table thead{display:none}.albums-table,.albums-table tbody,.albums-table tr,.albums-table th,.albums-table td{display:block;width:auto!important}.albums-table tr{padding:14px 16px;border-bottom:1px solid var(--hairline-soft)}.albums-table th,.albums-table td{padding:5px 0;border:0}.albums-table td[data-label]{display:flex;justify-content:space-between;gap:16px}.albums-table td[data-label]:before{content:attr(data-label);color:var(--ink-2)}.albums-table .users-actions{justify-content:flex-start;margin-top:8px;flex-wrap:wrap}}

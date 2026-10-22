@@ -1,0 +1,9 @@
+.gallery-user-filter { min-width:0; }
+.gallery-user-filter select { max-width:180px; text-overflow:ellipsis; }
+.gallery-owner-notice { color:var(--ink-2); font-size:var(--fs-s); margin:12px 0; }
+.library.is-readonly .card-check,.library.is-readonly .group-select,.library.is-readonly .library-view-controls { display:none; }
+@media(max-width:760px) { .gallery-user-filter select { max-width:150px; } }
+
+.admin-utilities .account-name { min-width:0; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.admin-utilities .account-logout { min-height:var(--control-height); padding-inline:8px; white-space:nowrap; font-size:12px; }
+@media(max-width:760px) { .admin-utilities .account-name { max-width:96px; } }

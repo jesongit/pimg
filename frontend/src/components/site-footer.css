@@ -1,0 +1,11 @@
+.site-footer{display:flex;align-items:center;justify-content:space-between;gap:12px 24px;padding-block:20px;color:var(--ink-2);font-size:12px;line-height:1.7}
+.footer-copy{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-width:0;overflow-wrap:anywhere}
+.footer-signature,.footer-registrations{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;min-width:0}
+.footer-site-name{color:var(--paper);font-weight:550}.footer-separator{color:var(--hairline)}
+.footer-registrations a:hover{color:var(--paper);text-decoration:underline;text-underline-offset:3px}
+.footer-icons{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-left:auto;flex-shrink:0}
+.footer-icon-link{display:grid;place-items:center;flex-shrink:0;width:32px;height:32px;border-radius:6px;color:var(--ink-2);transition:color .15s,background .15s}
+.footer-icon-link img{width:18px;height:18px;object-fit:contain}.footer-icon-link:hover{background:var(--ground-2);color:var(--paper)}
+.footer-icon-link:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.site-footer-preview{padding:12px 0 0;margin-top:12px;border-top:1px solid var(--hairline-soft);font-size:11px}
+@media(max-width:760px){.site-footer{gap:8px 12px;flex-wrap:wrap;padding-block:16px}.footer-copy{flex:1 1 100%;gap:4px 8px}.footer-signature{flex-basis:100%}.footer-separator{display:none}.footer-icons{max-width:100%;flex-wrap:wrap}.footer-icon-link{width:36px;height:36px}.site-footer-preview{padding-top:10px}}

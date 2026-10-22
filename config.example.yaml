@@ -1,0 +1,20 @@
+# 最小启动配置；存储、TG 登录、上传规则和临时保留策略在后台设置。
+# 新安装默认 admin/admin；首次登录设置新密码，管理员用户名也可在后台修改。
+# 公网地址在后台“设置 → 站点信息”中填写；可选用 PIMG_ADMIN_PASSWORD 覆盖初始密码。
+# 首次登录后先在后台完成存储配置，再上传文件。
+# 未列出的运行参数使用程序默认值；已有部署继续保留原密钥和 TG 会话。
+
+server:
+  listen: "0.0.0.0:8787"
+
+# 可选：仅对只读诊断接口免令牌；默认关闭。详见 docs/diagnostics.md。
+# diagnostics:
+#   allow_ips: ["192.168.1.0/24", "::1"]
+#   trusted_proxies: [] # 只填写实际反向代理的 IP；代理必须正确设置 X-Forwarded-For。
+
+paths:
+  # 直接使用该目录，包含账号、配置、密钥、TG 会话、本地存储和待完成上传。
+  data_dir: ./data
+  # 非 Docker 默认当前目录；cache、previews、diagnostics、tmp、migration 分别写入其子目录。
+  # Docker 使用 /pimg/data 与 /pimg/runtime，可分别通过 -v 自定义宿主机位置。
+  runtime_dir: .

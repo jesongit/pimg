@@ -1,0 +1,12 @@
+/* The counter belongs to the label, never to the navigation's flex sizing. */
+.task-nav-label { position:relative; display:inline-block; }
+.admin-nav .rail-task-badge {
+  position:absolute; inset:auto; right:-9px; top:0;
+  transform:translateY(-75%); margin:0; padding:0 3px;
+  min-width:14px; height:14px; border-radius:7px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--primary); color:var(--raised);
+  font-size:9px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums;
+  white-space:nowrap; pointer-events:none;
+}
+.admin-nav .rail-task-badge.has-failures { background:var(--err); }

@@ -1,0 +1,46 @@
+services:
+  pimg:
+    image: posase/pimg:v1.0.26
+    build: .
+    container_name: pimg
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/pimg/data
+      - ./runtime:/pimg/runtime
+      - ./config.yaml:/config.yaml:ro
+      # 可选：将已有素材目录挂到 /imports 下，始终使用只读挂载。
+      # - /srv/photos:/imports/photos:ro
+    environment:
+      PIMG_CONFIG: /config.yaml
+      # 机密信息建议用环境变量注入，而非写进 config.yaml：
+      PIMG_DATA_DIR: /pimg/data
+      PIMG_RUNTIME_DIR: /pimg/runtime
+      PIMG_MASTER_KEY_FILE: /pimg/data/system/keys/master.key
+      PIMG_ADMIN_USERNAME: "${PIMG_ADMIN_USERNAME:-}"
+      PIMG_ADMIN_PASSWORD: "${PIMG_ADMIN_PASSWORD:-}"
+      PIMG_COLD_STORAGE: "${PIMG_COLD_STORAGE:-telegram}"
+      PIMG_HOT_STORAGE: "${PIMG_HOT_STORAGE:-r2}"
+      PIMG_STORAGE_PROXY_URL: "${PIMG_STORAGE_PROXY_URL:-}"
+      PIMG_TG_API_ID: "${PIMG_TG_API_ID:-}"
+      PIMG_TG_API_HASH: "${PIMG_TG_API_HASH:-}"
+      PIMG_TG_CHAT_ID: "${PIMG_TG_CHAT_ID:-}"
+      PIMG_R2_ACCOUNT_ID: "${PIMG_R2_ACCOUNT_ID:-}"
+      PIMG_R2_ENDPOINT: "${PIMG_R2_ENDPOINT:-}"
+      PIMG_R2_ACCESS_KEY_ID: "${PIMG_R2_ACCESS_KEY_ID:-}"
+      PIMG_R2_SECRET_ACCESS_KEY: "${PIMG_R2_SECRET_ACCESS_KEY:-}"
+      PIMG_R2_TEMP_BUCKET: "${PIMG_R2_TEMP_BUCKET:-}"
+      PIMG_R2_PERM_BUCKET: "${PIMG_R2_PERM_BUCKET:-}"
+      PIMG_R2_PUBLIC_BASE_URL: "${PIMG_R2_PUBLIC_BASE_URL:-}"
+      PIMG_R2_TEMP_PUBLIC_BASE_URL: "${PIMG_R2_TEMP_PUBLIC_BASE_URL:-}"
+      PIMG_R2_TEMP_CLEANUP_BUCKET: "${PIMG_R2_TEMP_CLEANUP_BUCKET:-}"
+      PIMG_R2_TEMP_CACHE_SECONDS: "${PIMG_R2_TEMP_CACHE_SECONDS:-}"
+      PIMG_R2_TEMP_CDN_ZONE_ID: "${PIMG_R2_TEMP_CDN_ZONE_ID:-}"
+      PIMG_CF_ZONE_ID: "${PIMG_CF_ZONE_ID:-}"
+      PIMG_CF_API_TOKEN: "${PIMG_CF_API_TOKEN:-}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

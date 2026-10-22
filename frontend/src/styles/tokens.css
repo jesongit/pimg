@@ -1,0 +1,19 @@
+/* Shared photo-library tokens. Legacy variable names remain compatible. */
+:root {
+  color-scheme: light;
+  --canvas: #edf1f4; --chrome: #e1e8ee; --tool-surface: #e2e9ef;
+  --ground: #f3f6f8; --ground-2: #e7edf2; --raised: #ffffff; --raised-2: #e4ebf1; --sunken: #f4f7f9;
+  --hairline: #cbd5df; --hairline-soft: #dce3e9;
+  --paper: #293541; --ink-2: #526171; --ink-3: #606e7d; --margin-ink: #526a7e;
+  --primary: #526c81; --crayon: var(--primary); --crayon-hi: #3c566c; --crayon-soft: #d6e2eb; --crayon-line: #8da3b5;
+  --ok: #36734a; --warn: #8c611b; --err: #b43636;
+  --font-body: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
+  --fs-xs: 11px; --fs-s: 12.5px; --fs-b: 14px; --fs-m: 16px; --fs-l: 20px; --fs-xl: 24px; --fs-2xl: 30px; --fs-hero: 28px;
+  --r-xs: 4px; --r-s: 6px; --r-m: 12px; --r-l: 14px;
+  --shadow-1: 0 2px 5px rgba(29,40,54,.06); --shadow-2: 0 5px 20px rgba(29,40,54,.09); --shadow-pop: 0 8px 28px rgba(29,40,54,.14);
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 72px;
+  --ease-out: cubic-bezier(.16,1,.3,1); --header-h: 56px;
+  --control-height: 32px; --control-py: 5px; --control-px: 10px;
+}
+@media(max-width:760px){:root{--control-height:36px;--control-py:6px}}
