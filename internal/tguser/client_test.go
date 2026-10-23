@@ -195,7 +195,7 @@ func TestUserVideoUploadRejectsMissingMetadataBeforeProviderCall(t *testing.T) {
 }
 
 func TestUserDownloadRefreshesSourceAndExpiredFileReference(t *testing.T) {
-	payload := bytes.Repeat([]byte("raw-PNG-carrier-cipher"), 32000)
+	payload := bytes.Repeat([]byte("raw-PNG-carrier-cipher"), 64000)
 	reads, downloads := 0, 0
 	c := fakeClient(func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
 		switch req := in.(type) {

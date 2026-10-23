@@ -148,19 +148,43 @@ func TestUserUploadStreamUsesBoundedPartsForLargeVideo(t *testing.T) {
 	var received int64
 	parts := 0
 	sends := 0
-	c := fakeClient(func(_ context.Context, in bin.Encoder, out bin.Decoder) error {
+	var mu sync.Mutex
+	seen := map[int]bool{}
+	active, peak := 0, 0
+	firstWave := make(chan struct{})
+	c := fakeClient(func(ctx context.Context, in bin.Encoder, out bin.Decoder) error {
 		switch req := in.(type) {
 		case *tg.UploadSaveBigFilePartRequest:
-			if len(req.Bytes) > 512<<10 || req.FilePart != parts || req.FileTotalParts <= 1 {
-				t.Fatal("invalid bounded protocol part", len(req.Bytes), req.FilePart, req.FileTotalParts)
+			if len(req.Bytes) != 512<<10 || req.FilePart < 0 || req.FilePart >= 24 || req.FileTotalParts != 24 {
+				return fmt.Errorf("invalid bounded protocol part: %d/%d/%d", len(req.Bytes), req.FilePart, req.FileTotalParts)
 			}
 			for _, b := range req.Bytes {
 				if b != 0x5a {
-					t.Fatal("stream data changed")
+					return errors.New("stream data changed")
 				}
 			}
+			mu.Lock()
+			if seen[req.FilePart] {
+				mu.Unlock()
+				return errors.New("duplicate protocol part")
+			}
+			seen[req.FilePart] = true
 			received += int64(len(req.Bytes))
 			parts++
+			active++
+			if active > peak {
+				peak = active
+			}
+			if parts == 4 {
+				close(firstWave)
+			}
+			mu.Unlock()
+			defer func() { mu.Lock(); active--; mu.Unlock() }()
+			select {
+			case <-firstWave:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			out.(*tg.BoolBox).Bool = &tg.BoolTrue{}
 		case *tg.MessagesSendMediaRequest:
 			sends++
@@ -183,9 +207,84 @@ func TestUserUploadStreamUsesBoundedPartsForLargeVideo(t *testing.T) {
 		}
 		return nil
 	})
-	ref, err := c.UploadStream(context.Background(), 41, 7, "segment.mp4", "video/mp4", source, size, nil, "app:pimg video", 777, &VideoMetadata{Duration: 30, Width: 1280, Height: 720, SupportsStreaming: true})
-	if err != nil || ref.Size != size || source.read != size || received != size || parts < 2 || sends != 1 || source.maxRead > 512<<10 {
-		t.Fatal(ref, err, received, parts, sends, source.maxRead)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ref, err := c.UploadStream(ctx, 41, 7, "segment.mp4", "video/mp4", source, size, nil, "app:pimg video", 777, &VideoMetadata{Duration: 30, Width: 1280, Height: 720, SupportsStreaming: true})
+	if err != nil || ref.Size != size || source.read != size || received != size || parts != 24 || sends != 1 || source.maxRead > 512<<10 || peak != 4 || active != 0 {
+		t.Fatal(ref, err, received, parts, sends, source.maxRead, peak, active)
+	}
+}
+
+func TestUserUploadStreamCancellationStopsAllParallelParts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	active := 0
+	started := make(chan struct{})
+	c := fakeClient(func(ctx context.Context, in bin.Encoder, out bin.Decoder) error {
+		if _, ok := in.(*tg.UploadSaveBigFilePartRequest); !ok {
+			return fmt.Errorf("canceled upload unexpectedly published: %T", in)
+		}
+		mu.Lock()
+		active++
+		if active == 4 {
+			close(started)
+		}
+		mu.Unlock()
+		defer func() { mu.Lock(); active--; mu.Unlock() }()
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.UploadStream(ctx, 41, 7, "cancel.bin", "application/octet-stream", &generatedVideoReader{remaining: 12 << 20}, 12<<20, nil, "", 777, nil)
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("parallel upload did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation left parallel upload running")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if active != 0 {
+		t.Fatal("upload returned with active RPCs", active)
+	}
+}
+
+func TestUserOpenStreamUsesBoundedOneMiBRequests(t *testing.T) {
+	const size = 3<<20 + 17
+	payload := bytes.Repeat([]byte{0x6d}, size)
+	var offsets []int64
+	c, _ := streamFake(t, size, func(_ int, req *tg.UploadGetFileRequest) ([]byte, error) {
+		if req.Limit != 1<<20 {
+			return nil, fmt.Errorf("unexpected download block: %d", req.Limit)
+		}
+		offsets = append(offsets, req.Offset)
+		return payload[req.Offset:min(req.Offset+int64(req.Limit), size)], nil
+	})
+	reader, err := c.OpenStream(context.Background(), Reference{AccountID: 77, ChatID: 41, MessageID: 9, Size: size})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil || !bytes.Equal(got, payload) || len(offsets) != 4 {
+		t.Fatal("download bytes/request count", len(got), offsets, err)
+	}
+	for i, offset := range offsets {
+		if offset != int64(i)<<20 {
+			t.Fatal("out-of-order stream", offsets)
+		}
 	}
 }
 

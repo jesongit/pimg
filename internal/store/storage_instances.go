@@ -61,6 +61,7 @@ type StoragePolicy struct {
 	Temporary     string   `json:"temporary"`
 	NormalMB      int      `json:"normal_mbps"`
 	AcceleratedMB int      `json:"accelerated_mbps"`
+	LocalMB       int      `json:"local_mbps"`
 	Start         string   `json:"accelerated_start"`
 	End           string   `json:"accelerated_end"`
 	SyncCacheMB   int      `json:"sync_cache_mb"`
@@ -206,7 +207,7 @@ func (s *Service) initInstances() error {
 		return e
 	}
 	cold, hot := s.StorageSelection()
-	p := StoragePolicy{Archives: []string{cold}, Permanent: hot, Temporary: hot, NormalMB: 1, AcceleratedMB: 8, Start: "02:00", End: "06:00", SyncCacheMB: 4096}
+	p := StoragePolicy{Archives: []string{cold}, Permanent: hot, Temporary: hot, NormalMB: 1, AcceleratedMB: 8, LocalMB: 64, Start: "02:00", End: "06:00", SyncCacheMB: 4096}
 	if raw := m["storage.policy"]; raw != "" {
 		if e = json.Unmarshal([]byte(raw), &p); e != nil {
 			return e
@@ -274,7 +275,7 @@ func (s *Service) localFactory(id string, c InstanceConfig) (storage.Cold, stora
 	c.ColdDirectory = s.localPath(c.ColdDirectory)
 	if c.Bootstrap && c.LocalLayout != localFolderLayout {
 		if cold, ok := s.coldBackends["local"].(storage.LocalCold); ok && cold.Disk.Dir == c.ColdDirectory && s.localHot.Disk.Dir == c.Directory {
-			return cold, s.localHot, s.localHot, &localSource{dir: c.Directory, pace: s.idleReader}, nil
+			return cold, s.localHot, s.localHot, &localSource{dir: c.Directory, pace: s.localCopyReader}, nil
 		}
 		disk, err := storage.NewDisk(c.ColdDirectory)
 		if err != nil {
@@ -285,7 +286,7 @@ func (s *Service) localFactory(id string, c InstanceConfig) (storage.Cold, stora
 			return nil, nil, nil, nil, err
 		}
 		hot.BaseURLFunc = func() string { return s.PublicBaseURL() + "/media" }
-		return storage.LocalCold{Disk: disk}, hot, hot, &localSource{dir: c.Directory, pace: s.idleReader}, nil
+		return storage.LocalCold{Disk: disk}, hot, hot, &localSource{dir: c.Directory, pace: s.localCopyReader}, nil
 	}
 	if strings.TrimSpace(c.Directory) == "" {
 		return nil, nil, nil, nil, errors.New("请填写存储文件夹")
@@ -312,7 +313,7 @@ func (s *Service) localFactory(id string, c InstanceConfig) (storage.Cold, stora
 	if c.Bootstrap {
 		hot.BaseURLFunc = func() string { return s.PublicBaseURL() + "/media" }
 	}
-	return storage.LocalCold{Disk: disk}, hot, hot, &localSource{dir: root, pace: s.idleReader}, nil
+	return storage.LocalCold{Disk: disk}, hot, hot, &localSource{dir: root, pace: s.localCopyReader}, nil
 }
 func (s *Service) r2Factory(id string, c InstanceConfig) (storage.Cold, storage.Hot, *storage.LocalHot, SourceDriver, error) {
 	cl := s.R2
@@ -576,6 +577,14 @@ func pathOverlap(a, b string) bool {
 	return a == "" || b == "" || a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 func (s *Service) SaveStoragePolicy(p StoragePolicy) error {
+	// Older clients omit local_mbps. Keep the saved copy limit rather than
+	// resetting it or treating their otherwise valid policy as an error.
+	if p.LocalMB == 0 {
+		p.LocalMB = s.StoragePolicy().LocalMB
+		if p.LocalMB == 0 {
+			p.LocalMB = 64
+		}
+	}
 	p.Archives = append([]string(nil), p.Archives...)
 	if len(p.Archives) == 0 {
 		return errors.New("至少选择一个归档存储")
@@ -609,6 +618,9 @@ func (s *Service) SaveStoragePolicy(p StoragePolicy) error {
 	publish, _ := s.instance(p.Permanent)
 	if publish.hot.PublicURL(".capability") == "" {
 		return errors.New("永久发布实例需要配置公开域名")
+	}
+	if p.LocalMB < 1 || p.LocalMB > 1024 {
+		return errors.New("本地同步限速应为 1–1024 MiB/s")
 	}
 	if p.NormalMB < 1 || p.NormalMB > 1024 || p.AcceleratedMB < p.NormalMB || p.AcceleratedMB > 1024 || p.SyncCacheMB < 32 || p.SyncCacheMB > 16384 {
 		return errors.New("同步速率应为 1–1024 MiB/s，加速速率不低于普通速率，工作缓存为 32–16384 MiB")

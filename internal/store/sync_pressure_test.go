@@ -175,6 +175,7 @@ func TestPressureArchiveCompletesAcrossShortForegroundRequests(t *testing.T) {
 	p.Archives = []string{"local", peer}
 	p.NormalMB = 1
 	p.AcceleratedMB = 1
+	p.LocalMB = 1
 	if err := s.SaveStoragePolicy(p); err != nil {
 		t.Fatal(err)
 	}

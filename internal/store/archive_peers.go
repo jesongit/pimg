@@ -279,7 +279,7 @@ func (s *Service) syncStreamingOriginal(ctx context.Context, f *dbx.File, c *dbx
 		seen[id] = true
 		input, err := s.openPeerChunk(context.WithValue(ctx, archiveSourceContext{}, id), f, c)
 		if err == nil {
-			err = s.syncObject(ctx, f, c, target, input)
+			err = s.syncObject(ctx, f, c, target, s.syncCopyReader(ctx, input, id))
 			input.Close()
 		}
 		if err == nil {
@@ -353,7 +353,7 @@ func (s *Service) spoolArchiveChunk(ctx context.Context, f *dbx.File, c *dbx.Chu
 			continue
 		}
 		h := sha256New()
-		n, err := io.Copy(io.MultiWriter(spool, h), s.idleReader(ctx, io.LimitReader(input, c.Size+1)))
+		n, err := io.Copy(io.MultiWriter(spool, h), s.syncCopyReader(ctx, io.LimitReader(input, c.Size+1), target))
 		input.Close()
 		if err == nil && (n != c.Size || hexOf(h) != c.SHA256) {
 			err = errors.New("同步源分片校验失败")
@@ -475,7 +475,7 @@ func (s *Service) syncObject(ctx context.Context, f *dbx.File, c *dbx.Chunk, tar
 	}
 
 	var ref storage.Reference
-	ref, e = s.writeArchiveOriginal(ctx, b, f, c, s.idleReader(ctx, source))
+	ref, e = s.writeArchiveOriginal(ctx, b, f, c, s.syncCopyReader(ctx, source, target))
 	if e != nil {
 		ret = e
 		return e
@@ -494,7 +494,7 @@ func (s *Service) syncObject(ctx context.Context, f *dbx.File, c *dbx.Chunk, tar
 		return e
 	}
 	h := sha256New()
-	n, e := io.Copy(h, s.idleReader(ctx, io.LimitReader(r, c.Size+1)))
+	n, e := io.Copy(h, s.syncVerifyReader(ctx, io.LimitReader(r, c.Size+1), target))
 	r.Close()
 	if e == nil && (n != c.Size || hexOf(h) != c.SHA256) {
 		e = errors.New("目标归档分片校验失败")
@@ -560,7 +560,7 @@ func (s *Service) verifyArchivedOriginal(ctx context.Context, f *dbx.File, paced
 		}
 		var reader io.Reader = io.LimitReader(contextReaderForCache{ctx, rc}, f.Size+1)
 		if paced {
-			reader = s.idleReader(ctx, reader)
+			reader = s.syncVerifyReader(ctx, reader, id)
 		}
 		h := sha256New()
 		n, err := io.Copy(h, reader)
@@ -650,14 +650,57 @@ func (s *Service) openPeerChunk(ctx context.Context, f *dbx.File, c *dbx.Chunk) 
 }
 
 type pacedReader struct {
-	ctx context.Context
-	svc *Service
-	r   io.Reader
+	ctx   context.Context
+	svc   *Service
+	r     io.Reader
+	local bool
 }
 
 func (s *Service) idleReader(ctx context.Context, r io.Reader) io.Reader {
 	return &pacedReader{ctx: ctx, svc: s, r: r}
 }
+
+func (s *Service) localCopyReader(ctx context.Context, r io.Reader) io.Reader {
+	return &pacedReader{ctx: ctx, svc: s, r: r, local: true}
+}
+
+func (s *Service) localSyncInstance(id string) bool {
+	i, err := s.instance(id)
+	return err == nil && i.row.Driver == "local"
+}
+
+// Each leg uses its actual endpoint: disk spooling/copies use the local limit,
+// while any remote read or write keeps the network limit, including streaming
+// remote-to-local copies whose target alone cannot identify network traffic.
+func (s *Service) syncCopyReader(ctx context.Context, r io.Reader, instance string) io.Reader {
+	if s.localSyncInstance(instance) {
+		return s.localCopyReader(ctx, r)
+	}
+	return s.idleReader(ctx, r)
+}
+
+// Local verification only reads/hashes; it is not a copy. Retain cancellation
+// without applying either transfer limit. Remote verification still transfers.
+func (s *Service) syncVerifyReader(ctx context.Context, r io.Reader, instance string) io.Reader {
+	if s.localSyncInstance(instance) {
+		return syncContextReader{ctx, r}
+	}
+	return s.idleReader(ctx, r)
+}
+
+func (r *pacedReader) rateMiB(now time.Time) int {
+	policy := r.svc.StoragePolicy()
+	if r.local {
+		return max(1, policy.LocalMB)
+	}
+	rate := policy.NormalMB
+	clock := now.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("15:04")
+	if policy.Start != policy.End && ((policy.Start < policy.End && clock >= policy.Start && clock < policy.End) || (policy.Start > policy.End && (clock >= policy.Start || clock < policy.End))) {
+		rate = policy.AcceleratedMB
+	}
+	return max(1, rate)
+}
+
 func (r *pacedReader) Read(p []byte) (int, error) {
 	if e := r.ctx.Err(); e != nil {
 		return 0, e
@@ -668,15 +711,7 @@ func (r *pacedReader) Read(p []byte) (int, error) {
 	start := time.Now()
 	n, e := r.r.Read(p)
 	if n > 0 {
-		policy := r.svc.StoragePolicy()
-		rate := policy.NormalMB
-		now := time.Now().In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("15:04")
-		if policy.Start != policy.End && ((policy.Start < policy.End && now >= policy.Start && now < policy.End) || (policy.Start > policy.End && (now >= policy.Start || now < policy.End))) {
-			rate = policy.AcceleratedMB
-		}
-		if rate < 1 {
-			rate = 1
-		}
+		rate := r.rateMiB(time.Now())
 		wait := time.Duration(float64(n)/float64(rate<<20)*float64(time.Second)) - time.Since(start)
 		if wait > 0 {
 			timer := time.NewTimer(wait)

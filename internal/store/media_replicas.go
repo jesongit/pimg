@@ -163,14 +163,26 @@ func (s *Service) openMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaRep
 	return &readCloser{r: plain, closer: input}, nil
 }
 
-func (s *Service) verifyMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaReplica, p dbx.MediaPart) error {
+func (s *Service) verifyMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaReplica, p dbx.MediaPart) (retErr error) {
+	span := s.DB.Performance().Start(ctx, "stage", "archive_verify")
+	defer func() {
+		var size int64
+		if retErr == nil {
+			size = p.Size
+		}
+		span.FinishResult(retErr, 0, size)
+	}()
 	p.Verified = true
 	input, err := s.openMediaPart(ctx, f, r, p)
 	if err != nil {
 		return err
 	}
 	h := sha256New()
-	n, err := io.Copy(h, io.LimitReader(contextReaderForCache{ctx, input}, p.Size+1))
+	var reader io.Reader = contextReaderForCache{ctx, input}
+	if sync, _ := ctx.Value(mediaSyncContext{}).(bool); sync {
+		reader = s.syncVerifyReader(ctx, reader, r.InstanceID)
+	}
+	n, err := io.Copy(h, io.LimitReader(reader, p.Size+1))
 	err = errors.Join(err, input.Close())
 	if err == nil && (n != p.Size || hexOf(h) != p.SHA256) {
 		err = errors.New("存储片段恢复后与源内容不一致")
@@ -276,7 +288,7 @@ func (s *Service) writeMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaRe
 	}
 	started := time.Now()
 	if sync, _ := ctx.Value(mediaSyncContext{}).(bool); sync {
-		source = s.idleReader(ctx, source)
+		source = s.syncCopyReader(ctx, source, r.InstanceID)
 	}
 	ref, err := s.putArchiveReader(context.WithValue(ctx, mediaUploadContext{}, upload), b, key, source, size)
 	s.recordStorageResult(r.InstanceID, size, started, err)
@@ -396,7 +408,7 @@ func (s *Service) materializeMediaInput(ctx context.Context, f *dbx.File, input 
 			h := sha256New()
 			var reader io.Reader = raw
 			if sync, _ := ctx.Value(mediaSyncContext{}).(bool); sync {
-				reader = s.idleReader(ctx, reader)
+				reader = s.syncCopyReader(ctx, reader, r.InstanceID)
 			}
 			started := time.Now()
 			n, e := io.Copy(io.MultiWriter(out, h), io.LimitReader(contextReaderForCache{ctx, reader}, p.Size+1))

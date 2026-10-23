@@ -211,7 +211,7 @@ func (s *Service) ingestSource(ctx context.Context, r dbx.ImportRule, source Sou
 		if album, err := s.DB.GetAlbum(r.AlbumID); err == nil {
 			ctx = dbx.WithOwner(ctx, album.OwnerID)
 		}
-		existing, e = s.ReceiveUpload(ctx, s.idleReader(ctx, rc), v.Name, strings.TrimPrefix(strings.ToLower(pathExtension(v.Name)), "."), sql.NullInt64{Int64: r.AlbumID, Valid: true}, nil, 0, !r.Encrypted)
+		existing, e = s.ReceiveUpload(ctx, s.syncCopyReader(ctx, rc, r.InstanceID), v.Name, strings.TrimPrefix(strings.ToLower(pathExtension(v.Name)), "."), sql.NullInt64{Int64: r.AlbumID, Valid: true}, nil, 0, !r.Encrypted)
 	}
 	if e != nil {
 		return e

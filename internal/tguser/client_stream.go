@@ -26,6 +26,15 @@ var _ StreamTransport = (*Client)(nil)
 
 var errStreamLength = errors.New("Telegram 流长度与声明的文件大小不一致")
 
+// Keep one file transfer bounded while overlapping RPC round trips. The SDK's
+// default single 128 KiB upload part leaves high-latency links mostly idle.
+// Source reads remain sequential, so callers' hashing and pacing still apply.
+const (
+	telegramUploadPartSize   = 512 << 10
+	telegramUploadThreads    = 4
+	telegramDownloadPartSize = 1 << 20
+)
+
 type exactStreamReader struct {
 	ctx         context.Context
 	source      io.Reader
@@ -126,7 +135,7 @@ func (c *Client) UploadStream(ctx context.Context, chatID int64, topicID int, na
 			return c.recoveredReference(message), nil
 		}
 	}
-	u := uploader.NewUploader(api)
+	u := uploader.NewUploader(api).WithPartSize(telegramUploadPartSize).WithThreads(telegramUploadThreads)
 	file, err := u.Upload(ctx, uploader.NewUpload(name, reader, size))
 	if err := ctx.Err(); err != nil {
 		return Reference{}, err
@@ -288,7 +297,7 @@ func (c *Client) OpenStream(parent context.Context, ref Reference) (io.ReadClose
 		var result error
 		for attempt := 0; attempt < 2; attempt++ {
 			written := &sizeWriter{Writer: writer, remaining: snapshot.size}
-			_, result = downloader.NewDownloader().Download(snapshot.api, snapshot.location).Stream(ctx, written)
+			_, result = downloader.NewDownloader().WithPartSize(telegramDownloadPartSize).Download(snapshot.api, snapshot.location).Stream(ctx, written)
 			if snapshot.closer != nil {
 				_ = snapshot.closer.Close()
 			}

@@ -791,7 +791,7 @@ func (s *Service) RunLocalImport(ctx context.Context, id int64) (retErr error) {
 	ctx = context.WithValue(ctx, idleIntakeContext{}, true)
 	var input io.Reader = importGuard{ctx, f, root, item.Path, item.Version}
 	if b.Schedule == "idle" {
-		input = s.idleReader(ctx, input)
+		input = s.localCopyReader(ctx, input)
 	}
 	files, err := s.ReceiveUploadBatch(ctx, input, path.Base(item.Path), strings.TrimPrefix(path.Ext(item.Path), "."), sql.NullInt64{Int64: b.AlbumID, Valid: b.AlbumID > 0}, nil, 0, !b.Encrypted)
 	if err != nil {

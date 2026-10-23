@@ -107,7 +107,7 @@ func (s *Service) MigrateLocalArchiveFile(ctx context.Context, id string) error 
 			return e
 		}
 		hash := sha256New()
-		n, e := io.Copy(hash, s.idleReader(ctx, payload))
+		n, e := io.Copy(hash, syncContextReader{ctx, payload})
 		e = errors.Join(e, payload.Close())
 		if e != nil {
 			return e

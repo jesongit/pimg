@@ -33,14 +33,24 @@ func (s *Server) handleSaveStorageInstance(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, 200, map[string]any{"id": id})
 }
 func (s *Server) handleStoragePolicy(w http.ResponseWriter, r *http.Request) {
-	var p store.StoragePolicy
+	var p struct {
+		store.StoragePolicy
+		LocalMB *int `json:"local_mbps"`
+	}
 	if e := readJSONBody(r, &p, 8<<10); e != nil {
 		fail(w, 400, e.Error())
 		return
 	}
+	if p.LocalMB != nil {
+		if *p.LocalMB < 1 || *p.LocalMB > 1024 {
+			fail(w, 400, "本地同步限速应为 1–1024 MiB/s")
+			return
+		}
+		p.StoragePolicy.LocalMB = *p.LocalMB
+	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	if e := s.Svc.SaveStoragePolicy(p); e != nil {
+	if e := s.Svc.SaveStoragePolicy(p.StoragePolicy); e != nil {
 		fail(w, 400, e.Error())
 		return
 	}
