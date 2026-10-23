@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+
+	"pimg/internal/store"
 )
 
 func (s *Server) registerLocalImports(mux *http.ServeMux) {
@@ -30,7 +32,10 @@ func (s *Server) handleImportBrowse(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"path": node.Path, "parent": filepath.Dir(node.Path), "directory": node.Directory, "items": items, "next_offset": next})
+	for i := range items {
+		items[i].Path = store.EncodeSourcePath(items[i].Path)
+	}
+	writeJSON(w, 200, map[string]any{"path": store.EncodeSourcePath(node.Path), "parent": store.EncodeSourcePath(filepath.Dir(node.Path)), "directory": node.Directory, "items": items, "next_offset": next})
 }
 
 func (s *Server) handleImportBatches(w http.ResponseWriter, r *http.Request) {

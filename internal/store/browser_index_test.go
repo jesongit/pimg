@@ -256,6 +256,32 @@ func TestBrowserIndexConcurrentApplyReadStop(t *testing.T) {
 	wg.Wait()
 }
 
+func TestBrowserIndexRapidStopWhileScanning(t *testing.T) {
+	s, source := indexTestService(t)
+	for i := range 64 {
+		if err := os.Mkdir(filepath.Join(source, fmt.Sprint(i)), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		for range 30 {
+			s.ApplyBrowserWatchPaths([]string{source})
+			time.Sleep(time.Millisecond)
+			s.ApplyBrowserWatchPaths(nil)
+		}
+	}()
+	select {
+	case <-finished:
+	case <-time.After(20 * time.Second):
+		t.Fatal("stopping an active scan did not finish")
+	}
+	if len(s.BrowserIndexStatus().Roots) != 0 {
+		t.Fatal("stopped scanner retained configured roots")
+	}
+}
+
 func TestBrowserIndexRecursiveDuplicateNamesKeepOriginalPathOrder(t *testing.T) {
 	s, source := indexTestService(t)
 	for _, folder := range []string{"a-folder", "B-folder"} {

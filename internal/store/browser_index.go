@@ -50,6 +50,7 @@ type browserIndexer struct {
 	watch    *fsnotify.Watcher
 	ctx      context.Context
 	cancel   context.CancelFunc
+	scanDone chan struct{}
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	pending  map[string]bool
@@ -86,6 +87,11 @@ func (s *Service) ValidateBrowserWatchPaths(paths []string) ([]string, error) {
 	bytes := 0
 	for _, p := range paths {
 		p = strings.TrimSpace(p)
+		var err error
+		p, err = decodeSourcePath(p)
+		if err != nil {
+			return nil, err
+		}
 		bytes += len(p)
 		if p == "" || len(p) > 4096 || bytes > 32<<10 || !filepath.IsAbs(p) {
 			return nil, errors.New("监听目录必须是服务器内的绝对路径，总长度不超过 32 KiB")
@@ -146,6 +152,11 @@ func (s *Service) restoreBrowserIndex() {
 	}
 	var paths []string
 	if json.Unmarshal([]byte(raw), &paths) != nil {
+		return
+	}
+	var err error
+	paths, err = decodeSourcePaths(paths)
+	if err != nil {
 		return
 	}
 	// A removable/offline mount must not prevent application startup. The
@@ -278,7 +289,7 @@ CREATE INDEX IF NOT EXISTS browser_parent_size ON entries(root,parent,directory 
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &browserIndexer{svc: s, db: db, paths: append([]string{}, paths...), ctx: ctx, cancel: cancel, pending: map[string]bool{}, updating: map[string]bool{}, watched: map[string]bool{}}
+	r := &browserIndexer{svc: s, db: db, paths: append([]string{}, paths...), ctx: ctx, cancel: cancel, scanDone: make(chan struct{}), pending: map[string]bool{}, updating: map[string]bool{}, watched: map[string]bool{}}
 	r.watch, err = fsnotify.NewWatcher()
 	if err != nil {
 		r.warning = "系统监听不可用，已改为每 10 分钟校对；可手动更新索引。"
@@ -288,6 +299,10 @@ CREATE INDEX IF NOT EXISTS browser_parent_size ON entries(root,parent,directory 
 
 func (r *browserIndexer) stop() {
 	r.cancel()
+	// Closing a Windows watcher while Add is awaiting its reply can strand
+	// the scanner. Stop the only watcher mutator first; keep draining events
+	// until Close finishes so neither shutdown nor Add waits on delivery.
+	<-r.scanDone
 	if r.watch != nil {
 		_ = r.watch.Close()
 	}
@@ -334,26 +349,27 @@ func (s *Service) RefreshBrowserIndex(p string) bool {
 
 func (r *browserIndexer) run() {
 	defer r.wg.Done()
+	defer close(r.scanDone)
 	if r.watch != nil {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
 			for {
 				select {
-				case <-r.ctx.Done():
-					return
 				case event, ok := <-r.watch.Events:
 					if !ok {
 						return
 					}
-					if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename|fsnotify.Chmod) != 0 {
+					if r.ctx.Err() == nil && event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename|fsnotify.Chmod) != 0 {
 						r.queue(event.Name)
 					}
 				case _, ok := <-r.watch.Errors:
 					if !ok {
 						return
 					}
-					r.queue("")
+					if r.ctx.Err() == nil {
+						r.queue("")
+					}
 				}
 			}
 		}()

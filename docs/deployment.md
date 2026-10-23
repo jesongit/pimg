@@ -1,6 +1,6 @@
 # 部署与升级
 
-正式镜像：[posase/pimg](https://hub.docker.com/r/posase/pimg)，当前版本 `v1.0.33`，仅 `linux/amd64`。内置前端、FFmpeg、FFprobe 和 HEIC 预览工具。
+正式镜像：[posase/pimg](https://hub.docker.com/r/posase/pimg)，当前版本 `v1.0.34`，仅 `linux/amd64`。内置前端、FFmpeg、FFprobe 和 HEIC 预览工具。
 
 ## Docker
 
@@ -13,7 +13,7 @@ docker run -d --name pimg --restart unless-stopped \
   -v /opt/pimg/runtime:/pimg/runtime \
   -e PIMG_COLD_STORAGE=local \
   -e PIMG_HOT_STORAGE=local \
-  posase/pimg:v1.0.33
+  posase/pimg:v1.0.34
 ```
 
 首次默认 `admin/admin`，登录后按提示更换密码。可通过 `PIMG_ADMIN_USERNAME`、`PIMG_ADMIN_PASSWORD` 指定初始账号；已有数据库使用原账号，不会被新环境值重置。

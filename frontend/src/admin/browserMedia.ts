@@ -11,9 +11,17 @@ export type BrowserListing = {
   items: BrowserEntry[]; total: number; next_offset: number;
   recursive: boolean; skipped_directories: number; snapshot?: string;
   scan_limited?: boolean;
-  indexed?: boolean; index_building?: boolean; index_updating?: boolean; index_error?: string;
+  indexed?: boolean; index_root?: string; index_building?: boolean; index_updating?: boolean; index_error?: string;
 };
 export const browserBase = "/api/admin/file-browser";
+
+export function browserPathLabel(path: string) {
+  if (!path.startsWith("pimg-path://")) return path;
+  try {
+    const bytes = atob(path.slice("pimg-path://".length).replaceAll("-", "+").replaceAll("_", "/"));
+    return new TextDecoder().decode(Uint8Array.from(bytes, value => value.charCodeAt(0)));
+  } catch { return path; }
+}
 
 export function browserContent(entry: BrowserEntry, compatible = "") {
   return `${browserBase}/content?${new URLSearchParams({ path: entry.path, version: entry.version, compatible })}`;

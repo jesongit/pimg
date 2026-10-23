@@ -14,6 +14,7 @@ import (
 	"pimg/internal/config"
 	"pimg/internal/dbx"
 	"pimg/internal/mediax"
+	"pimg/internal/store"
 )
 
 func withTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
@@ -56,7 +57,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"upload_max_mb": st.UploadMaxMB, "allowed_exts": st.AllowedExts,
 		"default_allowed_exts": config.DefaultAllowedExts(), "effective_allowed_exts": s.Svc.AllowedExts(),
 		"original_cache_hours": s.Svc.OriginalCacheHours(),
-		"browser_watch_paths":  s.Svc.BrowserWatchPaths(),
+		"browser_watch_paths":  store.EncodeSourcePaths(s.Svc.BrowserWatchPaths()),
 		"browser_index":        s.Svc.BrowserIndexStatus(),
 		"log_retention_days":   logDays,
 		"debug_enabled":        st.DebugEnabled, "debug_state": s.DB.Performance().State(),
@@ -131,7 +132,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 				fail(w, 400, err.Error())
 				return
 			}
-			encoded, _ := json.Marshal(watchPaths)
+			encoded, _ := json.Marshal(store.EncodeSourcePaths(watchPaths))
 			patch[key] = string(encoded)
 			continue
 		}

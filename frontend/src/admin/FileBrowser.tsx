@@ -11,7 +11,7 @@ import LocalImport from "./LocalImport";
 import BrowserViewer from "./BrowserViewer";
 import FileBookmarks, { useFileBookmarks } from "./FileBookmarks";
 import useDragSelection from "./useDragSelection";
-import { browserBase } from "./browserMedia";
+import { browserBase, browserPathLabel } from "./browserMedia";
 import type { BrowserEntry, BrowserListing } from "./browserMedia";
 import "./file-browser.css";
 
@@ -92,7 +92,7 @@ export default function FileBrowser() {
       try {
         const status = await api.get<BrowserIndexStatus>(`${browserBase}/index`, controller.signal);
         const normalize = (value: string) => /^[a-z]:|^\\\\/i.test(value) ? value.replaceAll("\\", "/").toLowerCase() : value;
-        const current = normalize(data.path), root = status.roots.find(value => current === normalize(value.path) || current.startsWith(normalize(value.path) + "/"));
+        const current = normalize(data.index_root || data.path), root = status.roots.find(value => current === normalize(value.path) || current.startsWith(normalize(value.path) + "/"));
         if (!root) { setIndexChanged(true); return; }
         const changed = !data.snapshot?.endsWith(`:${root.revision}`);
         const stateChanged = data.index_building !== !root.ready || data.index_updating !== root.updating || (data.index_error || "") !== (root.error || status.error || "");
@@ -188,7 +188,7 @@ export default function FileBrowser() {
             <thead><tr><th scope="col"><span className="sr-only">选择</span></th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}</tr></thead>
             <tbody>{items.map(entry => <tr key={entry.path + entry.version} data-file-id={entry.path} data-selection-disabled={!entry.importable ? "true" : undefined} className={`browser-row${selected.has(entry.path) ? " selected" : ""}`} onClick={event => { if (!(event.target as HTMLElement).closest("button,a,input")) openEntry(entry, event.shiftKey); }}>
               <td className="browser-select-cell">{entry.importable && <button type="button" className="browser-row-check" role="checkbox" aria-checked={selected.has(entry.path)} aria-label={`选择文件 ${entry.name}`} onClick={event => toggle(entry, event.shiftKey)}><span className="check" data-on={selected.has(entry.path)}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</td>
-              <td className="browser-name-cell"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other"} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={entry.path} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button></td>
+              <td className="browser-name-cell"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other"} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={browserPathLabel(entry.path)} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button></td>
               <td className="browser-type-cell" title={entry.directory ? "文件夹" : entry.mime}>{entry.directory ? "文件夹" : entry.ext.toUpperCase() || "文件"}</td>
               <td className="browser-size-cell">{entry.directory ? "—" : fmtSize(entry.size)}</td>
               <td className="browser-created-cell" data-label="创建" title={entry.created_at ? new Date(entry.created_at * 1000).toLocaleString() : "文件系统未提供创建时间"}>{fileTime(entry.created_at)}</td>

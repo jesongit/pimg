@@ -84,13 +84,18 @@ func (s *Service) InitialImportPath() string {
 }
 
 func (s *Service) absoluteImportPath(p string) (string, error) {
+	var err error
+	p, err = decodeSourcePath(p)
+	if err != nil {
+		return "", err
+	}
 	if filepath.IsAbs(p) {
 		if strings.ContainsRune(p, '\x00') || strings.HasPrefix(p, `\\.\`) || strings.HasPrefix(p, `\\?\`) {
 			return "", errors.New("请选择本机或容器内的文件路径")
 		}
 		return filepath.Clean(p), nil
 	}
-	p, err := cleanImportPath(p)
+	p, err = cleanImportPath(p)
 	if err != nil {
 		return "", err
 	}
@@ -147,11 +152,14 @@ func cleanImportPath(p string) (string, error) {
 	if p == "" {
 		return ".", nil
 	}
-	// fs.ValidPath rejects absolute paths and parent traversal on every platform.
-	// Colons and backslashes are ordinary filename bytes on Linux; rejecting
-	// them there prevents scanning real source folders. On Windows they can
-	// denote drive paths, alternate data streams or native separators.
-	invalid := !fs.ValidPath(p) || strings.ContainsRune(p, '\x00')
+	// Validate components without requiring Unix filename bytes to be UTF-8.
+	// Replacing invalid bytes for this check cannot remove slashes, NULs or
+	// dot components. Native bytes are retained for every filesystem operation.
+	checked := p
+	if runtime.GOOS != "windows" {
+		checked = strings.ToValidUTF8(p, "\uFFFD")
+	}
+	invalid := !fs.ValidPath(checked) || strings.ContainsRune(p, '\x00')
 	if runtime.GOOS == "windows" {
 		invalid = invalid || strings.ContainsAny(p, "\\:")
 	}
@@ -240,6 +248,11 @@ func (s *Service) CreateLocalImport(paths []string, album int64, encrypted, recu
 	if len(paths) == 0 || len(paths) > 200 {
 		return 0, errors.New("请选择 1–200 个文件或目录")
 	}
+	var err error
+	paths, err = decodeSourcePaths(paths)
+	if err != nil {
+		return 0, err
+	}
 	if album != 0 {
 		target, err := s.DB.GetAlbum(album)
 		if err != nil {
@@ -304,7 +317,7 @@ func (s *Service) CreateLocalImport(paths []string, album int64, encrypted, recu
 		}
 		paths[i] = p
 	}
-	raw, _ := json.Marshal(paths)
+	raw, _ := json.Marshal(EncodeSourcePaths(paths))
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return 0, err
@@ -353,6 +366,9 @@ func (s *Service) localImportBatch(id int64, counts bool) (*LocalImportBatch, er
 		return nil, err
 	}
 	if err = json.Unmarshal([]byte(raw), &b.Paths); err != nil {
+		return nil, err
+	}
+	if b.Paths, err = decodeSourcePaths(b.Paths); err != nil {
 		return nil, err
 	}
 	if !counts {
@@ -503,7 +519,7 @@ func (s *Service) RunLocalImportScan(ctx context.Context, id int64) (retErr erro
 		if _, err = importInfo(root, source); err != nil {
 			return err
 		}
-		err = fs.WalkDir(root.FS(), source, func(p string, d fs.DirEntry, walkErr error) error {
+		err = fs.WalkDir(nativeImportFS{root}, source, func(p string, d fs.DirEntry, walkErr error) error {
 			if e := ctx.Err(); e != nil {
 				return e
 			}

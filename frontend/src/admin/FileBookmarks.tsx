@@ -4,6 +4,7 @@ import { IconFolderStar, IconX } from "@tabler/icons-react";
 import { useToast } from "../App";
 import { useLibraryPopover } from "./LibraryPopover";
 import type { BrowserLocation } from "./browserMedia";
+import { browserPathLabel } from "./browserMedia";
 
 function readLocations(key: string): BrowserLocation[] {
   try {
@@ -45,7 +46,7 @@ export default function FileBookmarks({ locations, currentPath, onVisit, onRemov
     }}>
       <div className="file-bookmarks-list" role="none">
         {locations.length ? locations.map(item => <div key={item.path} className="file-bookmark-row" role="none">
-          <button type="button" role="menuitem" className="file-bookmark-open" title={item.path} aria-current={item.path === currentPath ? "location" : undefined} onClick={() => { menu.close(true); onVisit(item.path); }}><span>{item.name || item.path}</span></button>
+          <button type="button" role="menuitem" className="file-bookmark-open" title={browserPathLabel(item.path)} aria-current={item.path === currentPath ? "location" : undefined} onClick={() => { menu.close(true); onVisit(item.path); }}><span>{item.name || browserPathLabel(item.path)}</span></button>
           <button type="button" role="menuitem" className="file-bookmark-remove" aria-label={`取消收藏 ${item.name || item.path}`} title="取消收藏" onClick={() => { menu.popup.current?.focus({ preventScroll: true }); onRemove(item.path); }}><IconX size={15} /></button>
         </div>) : <p className="file-bookmarks-empty">暂无收藏</p>}
       </div>

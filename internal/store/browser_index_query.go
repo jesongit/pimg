@@ -60,7 +60,7 @@ func (s *Service) browseIndexedFiles(ctx context.Context, p, query string, offse
 	if base == "" {
 		return BrowserListing{}, false, nil
 	}
-	out := BrowserListing{Path: p, Parent: filepath.Dir(p), Items: []BrowserEntry{}, Recursive: opts.Recursive, Indexed: true}
+	out := BrowserListing{Path: p, Parent: filepath.Dir(p), Items: []BrowserEntry{}, Recursive: opts.Recursive, Indexed: true, IndexRoot: base}
 	for current := p; ; current = filepath.Dir(current) {
 		name := filepath.Base(current)
 		if current == filepath.Dir(current) {
@@ -115,19 +115,24 @@ func (s *Service) browseIndexedFiles(ctx context.Context, p, query string, offse
 	if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM entries WHERE "+where, args...).Scan(&out.Total); err != nil {
 		return out, true, err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT payload FROM entries WHERE "+where+" ORDER BY "+indexOrder(ordering)+" LIMIT 200 OFFSET ?", append(args, offset)...)
+	rows, err := tx.QueryContext(ctx, "SELECT payload,path FROM entries WHERE "+where+" ORDER BY "+indexOrder(ordering)+" LIMIT 200 OFFSET ?", append(args, offset)...)
 	if err != nil {
 		return out, true, err
 	}
 	allowed := s.AllowedExts()
 	for rows.Next() {
-		var payload string
+		var payload, storedPath string
 		var entry BrowserEntry
-		if err = rows.Scan(&payload); err != nil {
+		if err = rows.Scan(&payload, &storedPath); err != nil {
 			break
 		}
 		if err = json.Unmarshal([]byte(payload), &entry); err != nil {
 			break
+		}
+		if runtime.GOOS != "windows" {
+			// Old JSON payloads may already have replaced invalid UTF-8. The
+			// native SQLite key retains those bytes even before reconciliation.
+			entry.Path = storedPath
 		}
 		rel, e := filepath.Rel(p, entry.Path)
 		if e != nil {

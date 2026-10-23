@@ -13,12 +13,12 @@ func TestImportRelativePathValidationMatchesHostFilesystem(t *testing.T) {
 			t.Fatalf("rejected ordinary relative path %q: %v", p, err)
 		}
 	}
-	for _, p := range []string{"..", "../outside", "a/../outside", "/absolute", "a//b", "a/./b", "a/", "nul\x00name", string([]byte{0xff})} {
+	for _, p := range []string{"..", "../outside", "a/../outside", "/absolute", "a//b", "a/./b", "a/", "nul\x00name"} {
 		if _, err := cleanImportPath(p); err == nil {
 			t.Fatalf("accepted invalid relative path %q", p)
 		}
 	}
-	for _, p := range []string{"2026:10:24/photo.png", `back\slash/photo.png`, "file:stream", `..\literal-name.png`, `C:literal-name.png`} {
+	for _, p := range []string{"2026:10:24/photo.png", `back\slash/photo.png`, "file:stream", `..\literal-name.png`, `C:literal-name.png`, string([]byte{0xff})} {
 		_, err := cleanImportPath(p)
 		if (err != nil) != (runtime.GOOS == "windows") {
 			t.Fatalf("host-specific filename handling for %q: %v", p, err)
