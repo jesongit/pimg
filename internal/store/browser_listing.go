@@ -215,6 +215,9 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 	if opts.Recursive && filepath.Dir(node.Path) == node.Path {
 		return BrowserListing{}, errors.New("根目录不支持展开，请先进入子文件夹")
 	}
+	if listing, indexed, err := s.browseIndexedFiles(ctx, node.Path, query, offset, ordering, opts); indexed {
+		return listing, err
+	}
 	root, err := openImportRoot(node.Path)
 	if err != nil {
 		return BrowserListing{}, err

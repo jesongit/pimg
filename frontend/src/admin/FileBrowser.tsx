@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { IconArrowDown, IconArrowUp, IconChevronRight, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconStar, IconStarFilled, IconX } from "@tabler/icons-react";
 import { api, fmtSize } from "../api";
+import type { BrowserIndexStatus } from "../api";
 import { useGallery } from "./GalleryScope";
 import { useToast } from "../App";
 import SelectAllControl from "./SelectAllControl";
@@ -52,6 +53,7 @@ export default function FileBrowser() {
   const [data, setData] = useState<BrowserListing | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const bookmarks = useFileBookmarks(storageKey, data ? data.breadcrumbs[data.breadcrumbs.length - 1] || { path: data.path, name: data.path } : null);
   const [revision, setRevision] = useState(0), [more, setMore] = useState(false);
+  const [indexChanged, setIndexChanged] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set()), [detail, setDetail] = useState<string | null>(null);
   const [importing, setImporting] = useState<{ paths: string[]; directory: boolean } | null>(null);
   const sequence = useRef(0), root = useRef<HTMLDivElement>(null), breadcrumbs = useRef<HTMLElement>(null), anchor = useRef<string | null>(null);
@@ -71,7 +73,7 @@ export default function FileBrowser() {
   };
   useEffect(() => {
     const controller = new AbortController(), request = ++sequence.current;
-    setLoading(true); setError(""); setData(null); setSelected(new Set()); setDetail(null); anchor.current = null; setMore(false);
+    setLoading(true); setError(""); setData(null); setSelected(new Set()); setDetail(null); anchor.current = null; setMore(false); setIndexChanged(false);
     void api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path, q: query, sort, ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal).then(value => {
       if (request !== sequence.current || controller.signal.aborted) return;
       setData(value);
@@ -80,6 +82,33 @@ export default function FileBrowser() {
       .finally(() => { if (!controller.signal.aborted && request === sequence.current) setLoading(false); });
     return () => controller.abort();
   }, [path, query, sort, recursive, revision, storageKey]);
+  useEffect(() => {
+    if (!data?.indexed || loading) return;
+    const controller = new AbortController(), request = sequence.current;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy || document.hidden) return;
+      busy = true;
+      try {
+        const status = await api.get<BrowserIndexStatus>(`${browserBase}/index`, controller.signal);
+        const normalize = (value: string) => /^[a-z]:|^\\\\/i.test(value) ? value.replaceAll("\\", "/").toLowerCase() : value;
+        const current = normalize(data.path), root = status.roots.find(value => current === normalize(value.path) || current.startsWith(normalize(value.path) + "/"));
+        if (!root) { setIndexChanged(true); return; }
+        const changed = !data.snapshot?.endsWith(`:${root.revision}`);
+        const stateChanged = data.index_building !== !root.ready || data.index_updating !== root.updating || (data.index_error || "") !== (root.error || status.error || "");
+        if (!changed && !stateChanged) return;
+        if (selected.size || detail || importing || more || data.items.length > 200) {
+          if (changed) setIndexChanged(true);
+          if (stateChanged) setData(previous => previous && { ...previous, index_building: !root.ready, index_updating: root.updating, index_error: root.error || status.error });
+          return;
+        }
+        const value = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal);
+        if (!controller.signal.aborted && sequence.current === request) { setData(value); setIndexChanged(false); }
+      } catch { /* A transient status failure must not hide a usable listing. */ }
+      finally { busy = false; }
+    }, 3000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [data, loading, selected.size, detail, importing, more, query, sort, recursive]);
   useEffect(() => { setSearch(query); }, [query]);
   useEffect(() => {
     if (search === query) return;
@@ -91,12 +120,19 @@ export default function FileBrowser() {
     const request = sequence.current;
     setMore(true);
     try {
-      const result = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, offset: String(data.next_offset), ...(recursive ? { recursive: "1", snapshot: data.snapshot || "" } : {}) })}`);
+      const result = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, offset: String(data.next_offset), ...(data.snapshot ? { snapshot: data.snapshot } : {}), ...(recursive ? { recursive: "1" } : {}) })}`);
       if (request === sequence.current) { setData(previous => previous && { ...result, items: [...previous.items, ...result.items.filter(item => !previous.items.some(old => old.path === item.path))] }); return result; }
     } catch (cause: any) { if (request === sequence.current) toast(cause.message, "err"); }
     finally { if (request === sequence.current) setMore(false); }
   };
   const items = data?.items || [], files = items.filter(entry => !entry.directory);
+  const refresh = async () => {
+    if (data?.indexed) {
+      try { await api.post(`${browserBase}/index/refresh`, {}); }
+      catch (cause: any) { toast(cause.message, "err"); }
+    }
+    setRevision(value => value + 1);
+  };
   const selectable = files.filter(entry => entry.importable), media = files.filter(entry => entry.kind === "image" || entry.kind === "video");
   const allSelected = selectable.length > 0 && selectable.every(entry => selected.has(entry.path));
   const toggle = (entry: BrowserEntry, range = false) => {
@@ -130,7 +166,7 @@ export default function FileBrowser() {
         <nav ref={breadcrumbs} className="file-browser-breadcrumbs" aria-label="文件夹路径">{folderNav.map((item, index) => <span key={item.path}>{index > 0 && <IconChevronRight size={13} />}<button type="button" className="text-button" title={item.path} aria-current={index === folderNav.length - 1 ? "location" : undefined} onClick={() => visit(item.path)}>{item.name}</button></span>)}</nav>
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-expand" aria-label={recursive ? "收起所有文件" : "展开所有文件"} title={data && data.parent === data.path || isRootPath(path) ? "根目录不支持展开，请先进入子文件夹" : recursive ? "收起所有文件，返回逐层浏览" : "展开当前目录及子目录中的所有图片和视频"} aria-pressed={recursive} disabled={loading || !data && !recursive || !!data && data.parent === data.path || isRootPath(path)} onClick={toggleExpanded}><IconFolders size={17} /></button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} title={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} aria-pressed={bookmarks.saved} disabled={!data || loading} onClick={bookmarks.toggle}>{bookmarks.saved ? <IconStarFilled size={17} /> : <IconStar size={17} />}</button>
-        <button type="button" className="btn btn-ghost file-browser-icon" aria-label="刷新目录" title="刷新目录" disabled={loading} onClick={() => setRevision(value => value + 1)}><IconRefresh size={17} /></button>
+        <button type="button" className="btn btn-ghost file-browser-icon" aria-label="刷新目录" title="刷新目录" disabled={loading} onClick={() => void refresh()}><IconRefresh size={17} /></button>
       </div>
       <div className="file-browser-actions">
         <SelectAllControl checked={allSelected} indeterminate={selected.size > 0 && !allSelected} disabled={!selectable.length || loading} scope="全选已加载的可导入文件" onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(entry => entry.path)))} />
@@ -142,8 +178,9 @@ export default function FileBrowser() {
       </div>
     </div>
     <div className="file-browser-content" aria-busy={loading}>
+      {data?.indexed && <p className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</p>}
       {!!data?.scan_limited && <p className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</p>}
-      {error ? <div className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></div> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
+      {error ? <div className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></div> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.index_building ? "索引正在建立，文件会陆续显示…" : data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
         {!!data?.skipped_directories && <p className="file-browser-warning" role="status">有 {data.skipped_directories} 个子文件夹无法读取，已展示其余可读取的文件。</p>}
         <div ref={root} className={`file-browser-list${drag.active ? " is-drag-selecting" : ""}`} {...drag.bind}>
           <table className="browser-table" aria-label={recursive ? "所有图片和视频" : "文件列表"}>

@@ -3,7 +3,7 @@
 隐私优先的自托管图床，管理图片、视频与相册，按需公开和分享。
 
 [![Docker Hub](https://img.shields.io/docker/pulls/posase/pimg?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/posase/pimg)
-[![Version](https://img.shields.io/badge/version-v1.0.31-526c81)](https://hub.docker.com/r/posase/pimg/tags?name=v1.0.31)
+[![Version](https://img.shields.io/badge/version-v1.0.32-526c81)](https://hub.docker.com/r/posase/pimg/tags?name=v1.0.32)
 [![Demo](https://img.shields.io/badge/demo-www.posase.net-36734a)](https://www.posase.net/)
 
 [在线演示](https://www.posase.net/) · [快速部署](#快速开始) · [使用说明](docs/usage.md) · [存储配置](docs/storage-guide.md) · [部署与升级](docs/deployment.md) · [问题反馈](https://github.com/jesongit/pimg/issues)
@@ -29,7 +29,7 @@ PIMG 将文件管理与公开展示分开：上传后先归档，再由你决定
 | --- | --- |
 | 图片与视频 | 支持 JPEG、PNG、WebP、HEIC/HEIF，以及 MP4、MOV、MKV、WebM 等格式；提供缩略图、媒体信息和兼容查看。 |
 | 图库与相册 | 按用户、相册、类型、状态、加密设置筛选；支持日期时间轴、批量整理、上传及服务器文件导入。 |
-| 文件浏览 | 管理员沿原目录结构查看图片和视频，收藏常用文件夹，按名称、大小或类型排序，复制导入到内部相册；源文件只读。 |
+| 文件浏览 | 管理员按文件夹浏览或展开图片和视频，按名称、类型、大小及创建／修改时间排序；可指定目录建立监听索引，默认关闭；源文件只读，可选择复制导入。 |
 | 多用户 | 管理员创建账号，普通用户管理自己的文件和相册；存储连接和公开授权由管理员统一管理。 |
 | 多存储归档 | 本地、Telegram、Cloudflare R2 可按用途组合；支持后台补齐、故障降级、恢复与逐存储状态查看。 |
 | 公开与分享 | 可按文件或相册公开首页缩略图，支持批量公开及单独隐藏；原件永久发布、临时链接分别管理。 |
@@ -45,7 +45,7 @@ PIMG 将文件管理与公开展示分开：上传后先归档，再由你决定
 
 ## 快速开始
 
-推荐使用 Docker。当前正式镜像为 **`posase/pimg:v1.0.31`**，支持 **`linux/amd64`**；镜像已包含 FFmpeg、FFprobe 和 HEIC 预览工具。
+推荐使用 Docker。当前正式镜像为 **`posase/pimg:v1.0.32`**，支持 **`linux/amd64`**；镜像已包含 FFmpeg、FFprobe 和 HEIC 预览工具。
 
 以下命令使用本地存储，可先体验，再在后台配置 Telegram 或 R2：
 
@@ -58,7 +58,7 @@ docker run -d \
   -v pimg-runtime:/pimg/runtime \
   -e PIMG_COLD_STORAGE=local \
   -e PIMG_HOT_STORAGE=local \
-  posase/pimg:v1.0.31
+  posase/pimg:v1.0.32
 ```
 
 1. 打开 <http://127.0.0.1:8787>，点击首页介绍或页脚后台入口，也可直接访问 `/login`。
@@ -107,7 +107,7 @@ Compose 默认对外绑定 `8787` 端口；请根据部署环境调整 `ports`�
 
 `/pimg/data` 保存数据库、主密钥、Telegram 会话、本地存储及待完成上传；`/pimg/runtime` 保存可重建的预览和运行缓存。数据库必须与**原主密钥**一起备份，外部本地存储目录也需单独保留。
 
-详细步骤见[部署与升级](docs/deployment.md#升级已有实例)，本次变化见 [v1.0.31 更新说明](docs/releases/v1.0.31.md)。
+详细步骤见[部署与升级](docs/deployment.md#升级已有实例)，本次变化见 [v1.0.32 更新说明](docs/releases/v1.0.32.md)。
 
 ## 文档与开发
 

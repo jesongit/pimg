@@ -64,6 +64,7 @@ type Service struct {
 	activity       syncActivity
 	localImportMu  sync.Mutex
 	browser        browserCache
+	browserIndex   browserIndexManager
 }
 
 func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client, r2c *r2x.Client, log *slog.Logger, options ...ServiceOption) (*Service, error) {
@@ -122,6 +123,7 @@ func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client,
 	if err := s.ReconcileAccountSpaces(); err != nil {
 		return nil, err
 	}
+	s.restoreBrowserIndex()
 	return s, nil
 }
 

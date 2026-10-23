@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/aws/smithy-go v1.28.5
 	github.com/gofrs/flock v0.13.1
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gotd/td v0.162.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/tink-crypto/tink-go/v2 v2.8.0

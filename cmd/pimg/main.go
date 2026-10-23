@@ -383,6 +383,7 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
+	defer svc.StopBrowserIndex()
 	if !cfg.DevMock {
 		if err = config.SaveStartup(cfg, master); err != nil {
 			return err
@@ -426,6 +427,7 @@ func runServer() error {
 	defer cancel()
 	httpSrv.Shutdown(ctx)
 	eng.Stop()
+	svc.StopBrowserIndex()
 	if err := svc.StopTelegramRuntime(ctx); err != nil {
 		log.Warn("等待 Telegram 会话停止失败", "err", err)
 	}

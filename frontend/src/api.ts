@@ -386,6 +386,8 @@ export interface TokenItem {
 }
 
 export interface AdminSettings {
+	browser_watch_paths: string[];
+	browser_index?: BrowserIndexStatus;
 	debug_enabled: boolean;
 	debug_state?: { enabled: boolean; error?: string };
 	log_retention_days: number;
@@ -418,6 +420,11 @@ export interface AdminSettings {
   r2_configured?: boolean;
   ffmpeg?: boolean;
 }
+
+export type BrowserIndexStatus = {
+  roots: { path: string; ready: boolean; updating: boolean; entries: number; revision: number; updated_at: number; error?: string }[];
+  error?: string; watch_warning?: string;
+};
 
 export interface StorageOption { id: string; name: string; configured: boolean; }
 const instanceNames = new Map<string,string>();

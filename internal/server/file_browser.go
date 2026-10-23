@@ -16,6 +16,17 @@ func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/file-browser", s.auth(s.handleFileBrowser))
 	mux.HandleFunc("POST /api/admin/file-browser/view", s.auth(s.handleBrowserView))
 	mux.HandleFunc("GET /api/admin/file-browser/content", s.auth(s.handleBrowserContent))
+	mux.HandleFunc("GET /api/admin/file-browser/index", s.auth(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		writeJSON(w, 200, s.Svc.BrowserIndexStatus())
+	}))
+	mux.HandleFunc("POST /api/admin/file-browser/index/refresh", s.auth(func(w http.ResponseWriter, r *http.Request) {
+		if !s.Svc.RefreshBrowserIndex("") {
+			fail(w, 400, "尚未设置监听目录，或索引未能启动，请检查文件索引设置")
+			return
+		}
+		writeJSON(w, 202, map[string]bool{"queued": true})
+	}))
 }
 
 func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {

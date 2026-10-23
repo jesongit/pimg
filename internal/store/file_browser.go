@@ -46,6 +46,10 @@ type BrowserListing struct {
 	SkippedDirectories int               `json:"skipped_directories"`
 	Snapshot           string            `json:"snapshot,omitempty"`
 	ScanLimited        bool              `json:"scan_limited,omitempty"`
+	Indexed            bool              `json:"indexed,omitempty"`
+	IndexBuilding      bool              `json:"index_building,omitempty"`
+	IndexUpdating      bool              `json:"index_updating,omitempty"`
+	IndexError         string            `json:"index_error,omitempty"`
 }
 
 func (s *Service) browserEntry(p string, info fs.FileInfo) BrowserEntry {

@@ -28,3 +28,9 @@
 }
 
 .settings-debug-toggle{display:flex;align-items:center;gap:10px;min-height:var(--control-height)}.settings-debug-toggle>input{width:18px;height:18px;flex-shrink:0;accent-color:var(--primary)}
+.settings-file-index { margin-top: 28px; }
+#browser-watch-paths { height: auto; min-height: 120px; resize: vertical; }
+.settings-file-index h3 { margin: 0; font-size: 14px; }
+.settings-index-root > div { min-width: 0; }
+.settings-index-root strong { overflow-wrap: anywhere; }
+.settings-index-root .settings-service-state { flex-shrink: 0; }

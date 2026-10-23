@@ -11,6 +11,7 @@ export type BrowserListing = {
   items: BrowserEntry[]; total: number; next_offset: number;
   recursive: boolean; skipped_directories: number; snapshot?: string;
   scan_limited?: boolean;
+  indexed?: boolean; index_building?: boolean; index_updating?: boolean; index_error?: string;
 };
 export const browserBase = "/api/admin/file-browser";
 

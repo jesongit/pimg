@@ -9,6 +9,7 @@ import { useUnsavedChanges } from "./interactions";
 import Tokens from "./Tokens";
 import AdminCredentials from "./AdminCredentials";
 import TwoFactor from "./TwoFactor";
+import BrowserIndexStatusPanel from "./BrowserIndexStatus";
 import FooterLinksEditor from "./FooterLinksEditor";
 import SiteFooter, { githubExample } from "../components/SiteFooter";
 import type { FooterLink } from "../api";
@@ -20,6 +21,7 @@ const groups = {
   footer: ["footer_text", "footer_links", "icp_number", "icp_url", "police_number", "police_url"],
   storage: ["cold_storage", "hot_storage"],
   policy: ["upload_max_mb", "allowed_exts", "original_cache_hours", "retention_hours", "presign_minutes"],
+  files: ["browser_watch_paths"],
   logs: ["log_retention_days"],
   debug: ["debug_enabled"],
 } as const;
@@ -28,13 +30,13 @@ type Key = (typeof groups)[Group][number];
 type Draft = Record<Key, string>;
 type Feedback = { kind: "ok" | "err"; text: string };
 const numbers = new Set<Key>(["home_page_size", "upload_max_mb", "original_cache_hours", "retention_hours", "presign_minutes", "log_retention_days"]);
-const groupNames: Record<Group, string> = { site: "站点信息", home: "首页公开", footer: "页脚设置", storage: "存储方案", policy: "上传与保留策略", logs: "日志保留设置",debug:"调试设置" };
-const categories = [["site", "站点信息"], ["home", "首页公开"], ["footer", "页脚与链接"], ["policy", "上传与保留"], ["logs", "日志保留"], ["security", "账号安全"], ["tokens", "访问令牌"], ["debug","调试模式"], ["system", "运行状态"]] as const;
+const groupNames: Record<Group, string> = { site: "站点信息", home: "首页公开", footer: "页脚设置", storage: "存储方案", policy: "上传与保留策略", files: "文件索引设置", logs: "日志保留设置",debug:"调试设置" };
+const categories = [["site", "站点信息"], ["home", "首页公开"], ["footer", "页脚与链接"], ["policy", "上传与保留"], ["files", "文件索引"], ["logs", "日志保留"], ["security", "账号安全"], ["tokens", "访问令牌"], ["debug","调试模式"], ["system", "运行状态"]] as const;
 const ActiveSection = createContext("site");
 
 function toDraft(settings: AdminSettings): Draft {
   return Object.fromEntries(Object.values(groups).flat().map((key) => [
-    key, key === "footer_links" ? JSON.stringify(settings.footer_links ?? [githubExample]) : key === "site_name" ? displaySiteName(settings[key]) : String(settings[key] ?? (key === "original_cache_hours" ? 24 : key === "log_retention_days" ? 30 : key==="debug_enabled"?false:"")),
+    key, key === "browser_watch_paths" ? (settings.browser_watch_paths || []).join("\n") : key === "footer_links" ? JSON.stringify(settings.footer_links ?? [githubExample]) : key === "site_name" ? displaySiteName(settings[key]) : String(settings[key] ?? (key === "original_cache_hours" ? 24 : key === "log_retention_days" ? 30 : key==="debug_enabled"?false:"")),
   ])) as Draft;
 }
 
@@ -43,6 +45,7 @@ const sectionIcons: Record<string, string> = {
   home: "m3 10 9-7 9 7v11h-7v-7h-4v7H3z",
   footer: "M3 5h18v14H3zM3 14h18M7 17h3m4 0h3",
   policy: "M6 18H5a4 4 0 0 1-1-8 7 7 0 0 1 14-2 5 5 0 0 1 1 10h-1M12 21V11m-4 4 4-4 4 4",
+  files: "M3 7V4h6l2 3h10v14H3V7Zm4 5h10m-10 4h7",
   logs: "M5 3h14v18H5zM8 7h8M8 11h8M8 15h5",
   storage: "M3 3h18v7H3zM3 14h18v7H3zM7 6.5h.01M7 17.5h.01",
   security: "M12 3 3 7v5c0 5 9 10 9 10s9-5 9-10V7zM9 12l2 2 4-4",
@@ -130,7 +133,7 @@ export default function Settings({ username }: { username: string }) {
   const save = async (group: Group, event: FormEvent) => {
     event.preventDefault();
     if (!draft || saving || !dirty(group)) return;
-    const patch = Object.fromEntries(groups[group].map((key) => [key, key === "footer_links" ? JSON.parse(draft[key]) : key==="debug_enabled"?draft[key]==="true":numbers.has(key) ? Number(draft[key]) : draft[key]]));
+    const patch = Object.fromEntries(groups[group].map((key) => [key, key === "browser_watch_paths" ? draft[key].split(/\r?\n/).map(value => value.trim()).filter(Boolean) : key === "footer_links" ? JSON.parse(draft[key]) : key==="debug_enabled"?draft[key]==="true":numbers.has(key) ? Number(draft[key]) : draft[key]]));
     setSaving(group); setFeedback((previous) => ({ ...previous, [group]: undefined }));
     try {
       const settings=await api.patch<AdminSettings>("/api/admin/settings",patch);
@@ -141,6 +144,7 @@ export default function Settings({ username }: { username: string }) {
       setDraft((previous) => previous && ({ ...previous, ...confirmed }));
       setFeedback((previous) => ({ ...previous, [group]: { kind: "ok", text: "已保存" } }));
       toast(`${groupNames[group]}已保存`);
+      if (group === "files") window.dispatchEvent(new Event("pimg:browser-index-updated"));
       if (group === "site" || group === "home" || group === "footer") window.dispatchEvent(new Event("pimg:site-updated"));
       if (group === "policy" || group === "storage") { refreshStatus(); window.dispatchEvent(new Event("pimg:policy-updated")); }
     } catch (e: any) {
@@ -154,7 +158,7 @@ export default function Settings({ username }: { username: string }) {
     </div>
     <div className="settings-action-buttons">
       {dirty(group) && <button type="button" className="btn btn-ghost" disabled={!!saving} onClick={() => reset(group)}>还原更改</button>}
-      <button className="btn btn-crayon" disabled={!!saving || !dirty(group)}>{settingsIcon("M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8")}{saving === group ? "保存中…" : `保存${group === "site" ? "站点信息" : group === "home" ? "首页设置" : group === "footer" ? "页脚设置" : group === "storage" ? "存储方案" : group === "logs" ? "日志设置" : group==="debug"?"调试设置":"策略"}`}</button>
+      <button className="btn btn-crayon" disabled={!!saving || !dirty(group)}>{settingsIcon("M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8")}{saving === group ? "保存中…" : `保存${group === "site" ? "站点信息" : group === "home" ? "首页设置" : group === "footer" ? "页脚设置" : group === "storage" ? "存储方案" : group === "files" ? "索引设置" : group === "logs" ? "日志设置" : group==="debug"?"调试设置":"策略"}`}</button>
       {(group === "home" || group === "footer") && <Link className="btn settings-home-link" to="/">{settingsIcon("M10 5H4v15h15v-6M14 3h7v7m0-7L10 14")}查看首页</Link>}
     </div>
   </div>;
@@ -225,6 +229,17 @@ export default function Settings({ username }: { username: string }) {
             <p className="settings-note">临时副本到期后由清理任务删除。链接有效期不会超过副本剩余保留时间；使用 R2 时可另设生命周期规则兜底。</p>
           </fieldset>{actions("policy")}
         </form>
+      </Section>
+      <Section id="files" title="文件索引" description="监听指定目录的变更，加快文件浏览、搜索和展开。">
+        <form onSubmit={event => save("files", event)} aria-label="文件索引设置">
+          <fieldset className="settings-fields" disabled={saving === "files"}>
+            <Field id="browser-watch-paths" label="监听目录" hint="每行一个服务器或容器内的绝对路径，包含子文件夹。默认留空，不监听或扫描任何目录；Docker 需先只读挂载目录。">
+              <textarea id="browser-watch-paths" className="input" rows={5} maxLength={32768} spellCheck={false} value={draft.browser_watch_paths} onChange={event => update("browser_watch_paths", event.target.value)} aria-describedby="browser-watch-paths-hint" placeholder="例如 /media/photos" />
+            </Field>
+            <p className="settings-note">保存后立即生效。首次建立索引需要扫描目录；之后按变更更新，并每 10 分钟校对一次。索引只保存文件信息，源文件保持只读。清空并保存即可停止监听。</p>
+          </fieldset>{actions("files")}
+        </form>
+        {active === "files" && <BrowserIndexStatusPanel />}
       </Section>
       <Section id="logs" title="日志保留" description="定期清理过期历史，保留当前任务和恢复所需记录。">
         <form onSubmit={event=>save("logs",event)} aria-label="日志保留设置">

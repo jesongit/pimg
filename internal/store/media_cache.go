@@ -428,6 +428,7 @@ func (s *Service) ForgetMediaViews(f *dbx.File) {
 }
 
 func (s *Service) StopMediaLoads() {
+	s.StopBrowserIndex()
 	c := s.media
 	c.mu.Lock()
 	c.closed = true

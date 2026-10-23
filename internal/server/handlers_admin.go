@@ -56,6 +56,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"upload_max_mb": st.UploadMaxMB, "allowed_exts": st.AllowedExts,
 		"default_allowed_exts": config.DefaultAllowedExts(), "effective_allowed_exts": s.Svc.AllowedExts(),
 		"original_cache_hours": s.Svc.OriginalCacheHours(),
+		"browser_watch_paths":  s.Svc.BrowserWatchPaths(),
+		"browser_index":        s.Svc.BrowserIndexStatus(),
 		"log_retention_days":   logDays,
 		"debug_enabled":        st.DebugEnabled, "debug_state": s.DB.Performance().State(),
 		"retention_hours": st.RetentionHours, "presign_minutes": st.PresignMinutes,
@@ -71,8 +73,9 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 type settingsPatch map[string]any
 
 var settingKeys = map[string]string{
-	"public_base_url": "public_base_url",
-	"site_name":       "name", "site_desc": "desc", "logo_url": "logo",
+	"browser_watch_paths": "browser_watch_paths",
+	"public_base_url":     "public_base_url",
+	"site_name":           "name", "site_desc": "desc", "logo_url": "logo",
 	"footer_text": "footer", "icp_number": "icp_no", "icp_url": "icp_url",
 	"footer_links":  "footer_links",
 	"police_number": "police_no", "police_url": "police_url",
@@ -94,6 +97,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 校验
+	var watchPaths []string
 	for key, value := range patch {
 		if _, ok := settingKeys[key]; !ok {
 			fail(w, 400, "未知设置项 "+key)
@@ -104,6 +108,31 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 				fail(w, 400, "debug_enabled 必须是布尔值")
 				return
 			}
+			continue
+		}
+		if key == "browser_watch_paths" {
+			items, ok := value.([]any)
+			if !ok {
+				fail(w, 400, "browser_watch_paths 必须是目录数组，清空请提交 []")
+				return
+			}
+			paths := []string{}
+			for _, item := range items {
+				p, valid := item.(string)
+				if !valid {
+					fail(w, 400, "监听目录必须是字符串")
+					return
+				}
+				paths = append(paths, p)
+			}
+			var err error
+			watchPaths, err = s.Svc.ValidateBrowserWatchPaths(paths)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			encoded, _ := json.Marshal(watchPaths)
+			patch[key] = string(encoded)
 			continue
 		}
 		if key == "footer_links" {
@@ -225,7 +254,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, key+" 类型错误")
 			return
 		}
-		if key != "footer_links" && len(val) > 4096 {
+		if key != "footer_links" && key != "browser_watch_paths" && len(val) > 4096 {
 			fail(w, 400, key+" 过长")
 			return
 		}
@@ -237,6 +266,9 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		fail(w, 500, err.Error())
 		return
+	}
+	if _, changed := patch["browser_watch_paths"]; changed {
+		s.Svc.ApplyBrowserWatchPaths(watchPaths)
 	}
 	if changeCold || changeHot {
 		if err := s.Svc.SetStorage(cold, hot); err != nil {
