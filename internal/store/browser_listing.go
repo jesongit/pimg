@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -224,7 +225,7 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 	}
 	defer root.Close()
 	query = strings.ToLower(strings.TrimSpace(query))
-	if opts.Recursive {
+	if opts.Recursive && runtime.GOOS == "windows" {
 		query = strings.ReplaceAll(query, `\`, "/")
 	}
 	key := node.Path + "\x00" + query + "\x00" + ordering

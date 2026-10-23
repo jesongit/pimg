@@ -67,7 +67,7 @@ func (r *browserIndexer) updatePath(base, p string) {
 	defer func() { r.mu.Lock(); r.updating[base] = false; r.mu.Unlock() }()
 	err := r.updateEntry(ctx, base, p)
 	if err != nil && r.ctx.Err() == nil {
-		_, _ = r.db.Exec(`UPDATE roots SET error=? WHERE path=?`, "部分索引未能更新："+err.Error(), base)
+		_, _ = r.db.Exec(`UPDATE roots SET error=? WHERE path=?`, fmt.Sprintf("部分索引未能更新：路径 %q：%v", p, err), base)
 	}
 }
 
@@ -220,7 +220,7 @@ func (r *browserIndexer) scanDirectory(ctx context.Context, base string, root *o
 	info, err := importInfo(root, filepath.ToSlash(rel))
 	if err != nil || !info.IsDir() {
 		if err != nil {
-			return err
+			return fmt.Errorf("读取子目录 %q：%w", filepath.ToSlash(rel), err)
 		}
 		return os.ErrNotExist
 	}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"pimg/internal/dbx"
@@ -146,7 +147,15 @@ func cleanImportPath(p string) (string, error) {
 	if p == "" {
 		return ".", nil
 	}
-	if p != "." && (!fs.ValidPath(p) || strings.ContainsAny(p, "\\:\x00")) {
+	// fs.ValidPath rejects absolute paths and parent traversal on every platform.
+	// Colons and backslashes are ordinary filename bytes on Linux; rejecting
+	// them there prevents scanning real source folders. On Windows they can
+	// denote drive paths, alternate data streams or native separators.
+	invalid := !fs.ValidPath(p) || strings.ContainsRune(p, '\x00')
+	if runtime.GOOS == "windows" {
+		invalid = invalid || strings.ContainsAny(p, "\\:")
+	}
+	if p != "." && invalid {
 		return "", errors.New("请选择导入根目录内的相对路径")
 	}
 	return p, nil

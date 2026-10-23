@@ -86,7 +86,7 @@ func (s *Service) browseIndexedFiles(ctx context.Context, p, query string, offse
 	out.IndexUpdating = r.updating[base]
 	r.mu.Unlock()
 	query = strings.ToLower(strings.TrimSpace(query))
-	if opts.Recursive {
+	if opts.Recursive && runtime.GOOS == "windows" {
 		query = strings.ReplaceAll(query, `\`, "/")
 	}
 	viewKey := sha256Hex([]byte(base + "\x00" + p + "\x00" + query + "\x00" + ordering + fmt.Sprint(opts.Recursive)))[:16]
