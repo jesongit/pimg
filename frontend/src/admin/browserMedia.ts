@@ -3,12 +3,13 @@ import type { OriginalView } from "../api";
 export type BrowserEntry = {
   path: string; name: string; directory: boolean; size: number;
   ext: string; kind: string; mime: string; version: string;
-  modified_at: number; importable: boolean;
+  created_at: number; modified_at: number; relative_path: string; importable: boolean;
 };
 export type BrowserLocation = { path: string; name: string };
 export type BrowserListing = {
   path: string; parent: string; breadcrumbs: BrowserLocation[];
   items: BrowserEntry[]; total: number; next_offset: number;
+  recursive: boolean; skipped_directories: number; snapshot?: string;
 };
 export const browserBase = "/api/admin/file-browser";
 
@@ -26,6 +27,10 @@ function pause(signal: AbortSignal) {
 }
 
 export async function prepareBrowserMedia(entry: BrowserEntry, compatible: string, retry: boolean, signal: AbortSignal): Promise<OriginalView> {
+  signal.throwIfAborted();
+  if (entry.kind === "image" && !compatible) {
+    return { status: "ready", loaded: entry.size, total: entry.size, percent: 100, source: "filesystem", url: browserContent(entry) };
+  }
   for (;;) {
     signal.throwIfAborted();
     const response = await fetch(`${browserBase}/view`, {

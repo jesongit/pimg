@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"mime"
 	"net/http"
@@ -26,9 +27,21 @@ func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "分页参数无效")
 		return
 	}
-	listing, err := s.Svc.BrowseLocalFiles(r.Context(), r.URL.Query().Get("path"), r.URL.Query().Get("q"), offset, r.URL.Query().Get("sort"))
+	recursive := r.URL.Query().Get("recursive")
+	if recursive != "" && recursive != "0" && recursive != "1" {
+		fail(w, 400, "展开参数无效")
+		return
+	}
+	listing, err := s.Svc.BrowseLocalFiles(r.Context(), r.URL.Query().Get("path"), r.URL.Query().Get("q"), offset, r.URL.Query().Get("sort"), store.BrowserOptions{Recursive: recursive == "1", Snapshot: r.URL.Query().Get("snapshot")})
 	if err != nil {
-		fail(w, 400, "无法打开此路径，请检查目录、挂载和读取权限")
+		if r.Context().Err() != nil {
+			return
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			fail(w, 400, "目录读取时间过长，请进入更小的子文件夹后重试")
+			return
+		}
+		fail(w, 400, "无法读取目录："+err.Error())
 		return
 	}
 	w.Header().Set("Cache-Control", "private, no-store")

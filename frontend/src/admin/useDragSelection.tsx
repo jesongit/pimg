@@ -63,7 +63,7 @@ export default function useDragSelection(options:Options){
     suppress.current=false;
     if(!latest.current.enabled||event.button!==0||!event.isPrimary)return;
     const target=event.target as Element;
-    if(target.closest('input,select,textarea,a,.photo-group-heading,button:not(.card-open)'))return;
+    if(target.closest('input,select,textarea,a,.photo-group-heading,button:not(.card-open):not([data-selection-open])'))return;
     const card=cardAt(target);if(card?.hasAttribute('data-selection-disabled'))return;
     stop();suppress.current=false;
     drag.current={id:event.pointerId,touch:event.pointerType==="touch",active:false,startX:event.clientX+window.scrollX,startY:event.clientY+window.scrollY,lastX:event.clientX+window.scrollX,lastY:event.clientY+window.scrollY,x:event.clientX,y:event.clientY,base:new Set(latest.current.selected),visited:new Set()};

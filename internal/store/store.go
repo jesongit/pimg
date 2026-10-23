@@ -63,6 +63,7 @@ type Service struct {
 	storages       storageRuntime
 	activity       syncActivity
 	localImportMu  sync.Mutex
+	browser        browserCache
 }
 
 func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client, r2c *r2x.Client, log *slog.Logger, options ...ServiceOption) (*Service, error) {

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -19,12 +17,16 @@ import (
 // Browser entries are filesystem metadata, never managed files or archives.
 type BrowserEntry struct {
 	ImportPath
-	Ext        string `json:"ext"`
-	Kind       string `json:"kind"`
-	MIME       string `json:"mime"`
-	Version    string `json:"version"`
-	ModifiedAt int64  `json:"modified_at"`
-	Importable bool   `json:"importable"`
+	Ext          string `json:"ext"`
+	Kind         string `json:"kind"`
+	MIME         string `json:"mime"`
+	Version      string `json:"version"`
+	ModifiedAt   int64  `json:"modified_at"`
+	CreatedAt    int64  `json:"created_at"`
+	RelativePath string `json:"relative_path"`
+	Importable   bool   `json:"importable"`
+	modifiedNS   int64
+	createdNS    int64
 }
 
 type BrowserLocation struct {
@@ -33,12 +35,15 @@ type BrowserLocation struct {
 }
 
 type BrowserListing struct {
-	Path        string            `json:"path"`
-	Parent      string            `json:"parent"`
-	Breadcrumbs []BrowserLocation `json:"breadcrumbs"`
-	Items       []BrowserEntry    `json:"items"`
-	Total       int               `json:"total"`
-	NextOffset  int               `json:"next_offset"`
+	Path               string            `json:"path"`
+	Parent             string            `json:"parent"`
+	Breadcrumbs        []BrowserLocation `json:"breadcrumbs"`
+	Items              []BrowserEntry    `json:"items"`
+	Total              int               `json:"total"`
+	NextOffset         int               `json:"next_offset"`
+	Recursive          bool              `json:"recursive"`
+	SkippedDirectories int               `json:"skipped_directories"`
+	Snapshot           string            `json:"snapshot,omitempty"`
 }
 
 func (s *Service) browserEntry(p string, info fs.FileInfo) BrowserEntry {
@@ -51,112 +56,7 @@ func (s *Service) browserEntry(p string, info fs.FileInfo) BrowserEntry {
 			break
 		}
 	}
-	return BrowserEntry{ImportPath: ImportPath{Path: p, Name: filepath.Base(p), Directory: info.IsDir(), Size: info.Size()}, Ext: ext, Kind: media.Kind, MIME: media.Mime, Version: localVersion(info), ModifiedAt: info.ModTime().Unix(), Importable: !info.IsDir() && importable && media.Kind != "other"}
-}
-
-func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset int, ordering string) (BrowserListing, error) {
-	switch ordering {
-	case "", "name", "name_desc", "size_desc", "size_asc", "type", "type_desc":
-	default:
-		return BrowserListing{}, errors.New("目录排序参数无效")
-	}
-	if p == "" {
-		p = s.InitialImportPath()
-	}
-	node, err := s.ImportPathInfo(p)
-	if err != nil {
-		return BrowserListing{}, err
-	}
-	if !node.Directory {
-		node.Path = filepath.Dir(node.Path)
-	}
-	if offset < 0 || offset > 10_000_000 || len(query) > 512 {
-		return BrowserListing{}, errors.New("目录查询参数无效")
-	}
-	root, err := openImportRoot(node.Path)
-	if err != nil {
-		return BrowserListing{}, err
-	}
-	defer root.Close()
-	dir, err := root.Open(".")
-	if err != nil {
-		return BrowserListing{}, err
-	}
-	defer dir.Close()
-	out := BrowserListing{Path: node.Path, Parent: filepath.Dir(node.Path), Items: []BrowserEntry{}}
-	for current := node.Path; ; current = filepath.Dir(current) {
-		name := filepath.Base(current)
-		if current == filepath.Dir(current) {
-			name = current
-		}
-		out.Breadcrumbs = append([]BrowserLocation{{Path: current, Name: name}}, out.Breadcrumbs...)
-		if current == filepath.Dir(current) {
-			break
-		}
-	}
-	query = strings.ToLower(strings.TrimSpace(query))
-	for {
-		if err := ctx.Err(); err != nil {
-			return BrowserListing{}, err
-		}
-		entries, readErr := dir.ReadDir(256)
-		for _, entry := range entries {
-			if entry.Type()&os.ModeSymlink != 0 || query != "" && !strings.Contains(strings.ToLower(entry.Name()), query) {
-				continue
-			}
-			info, e := entry.Info()
-			if e != nil || !info.IsDir() && !info.Mode().IsRegular() {
-				continue
-			}
-			out.Items = append(out.Items, s.browserEntry(filepath.Join(node.Path, entry.Name()), info))
-		}
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-		if readErr != nil {
-			return BrowserListing{}, readErr
-		}
-	}
-	sort.Slice(out.Items, func(i, j int) bool {
-		a, b := out.Items[i], out.Items[j]
-		if a.Directory != b.Directory {
-			return a.Directory
-		}
-		if !a.Directory {
-			switch ordering {
-			case "size_desc", "size_asc":
-				if a.Size != b.Size {
-					if ordering == "size_desc" {
-						return a.Size > b.Size
-					}
-					return a.Size < b.Size
-				}
-			case "type", "type_desc":
-				if a.Ext != b.Ext {
-					if ordering == "type_desc" {
-						return a.Ext > b.Ext
-					}
-					return a.Ext < b.Ext
-				}
-			}
-		}
-		nameOrder := cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-		if nameOrder == 0 {
-			nameOrder = cmp.Compare(a.Name, b.Name)
-		}
-		if ordering == "name_desc" {
-			return nameOrder > 0
-		}
-		return nameOrder < 0
-	})
-	out.Total = len(out.Items)
-	start := min(offset, out.Total)
-	end := min(start+200, out.Total)
-	if end < out.Total {
-		out.NextOffset = end
-	}
-	out.Items = out.Items[start:end]
-	return out, nil
+	return BrowserEntry{ImportPath: ImportPath{Path: p, Name: filepath.Base(p), Directory: info.IsDir(), Size: info.Size()}, Ext: ext, Kind: media.Kind, MIME: media.Mime, Version: localVersion(info), ModifiedAt: info.ModTime().Unix(), modifiedNS: info.ModTime().UnixNano(), Importable: !info.IsDir() && importable && media.Kind != "other"}
 }
 
 // Open every source read-only through os.Root; check the opened file as well as

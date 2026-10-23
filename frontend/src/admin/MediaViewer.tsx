@@ -11,6 +11,7 @@ import { useGallery } from "./GalleryScope";
 type Stage = "idle" | "preparing" | "loading" | "decoding" | "ready" | "error";
 
 export type MediaSourceAdapter = {
+  autoLoad?: boolean;
   prepare: (compatible: string, retry: boolean, signal: AbortSignal) => Promise<OriginalView>;
   download: string;
 };
@@ -44,13 +45,14 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
 }) {
   const { api } = useGallery();
   const video = file.kind === "video", enabled = file.archive_state === "done" && !blocked;
-  const [requested, setRequested] = useState(!video && !!file.local_ready), [attempt, setAttempt] = useState(0);
+  const autoLoad = !!sourceAdapter?.autoLoad;
+  const [requested, setRequested] = useState(autoLoad || !video && !!file.local_ready), [attempt, setAttempt] = useState(0);
   const [stage, setStage] = useState<Stage>("idle"), [percent, setPercent] = useState(0);
   const [source, setSource] = useState(""), [visible, setVisible] = useState(false), [error, setError] = useState("");
   const [previewFailed, setPreviewFailed] = useState(false), [previewAttempt, setPreviewAttempt] = useState(0);
   const [partIndex, setPartIndex] = useState(0), [compatible, setCompatible] = useState("");
   const objectURL = useRef(""), dock = useRef<HTMLDivElement>(null), videoElement = useRef<HTMLVideoElement>(null),stageElement=useRef<HTMLDivElement>(null);
-  const activeSignal = useRef<AbortSignal>(), heicTried = useRef(false), playNext = useRef(false), expectedTime = useRef(0);
+  const activeSignal = useRef<AbortSignal>(), heicTried = useRef(false), playNext = useRef(autoLoad && video), expectedTime = useRef(0);
   const requestedRef=useRef(requested);requestedRef.current=requested;
   const parts = file.media_parts || [], currentPart = parts[partIndex];
   const preview = !sourceAdapter && enabled && (file.has_thumb || file.kind === "image" || file.kind === "video") ? api.url(`/files/${encodeURIComponent(file.id)}/content?kind=thumb&v=${previewAttempt}`) : "";
@@ -70,7 +72,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     setRequested(false);setVisible(false);setSource("");setStage("idle");
   },[enabled]);
   useEffect(() => {
-    setRequested(!video && !!file.local_ready); setPartIndex(0); setCompatible(""); setVisible(false); setSource(""); heicTried.current = false;
+    setRequested(autoLoad || !video && !!file.local_ready); setPartIndex(0); setCompatible(""); setVisible(false); setSource(""); heicTried.current = false; playNext.current = autoLoad && video;
   }, [file.id]);
   useEffect(() => {
     const element = dock.current; if (!element) return;
@@ -136,7 +138,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   return <>
     <div ref={stageElement} {...zoom.bind} className={`dpreview progressive-preview media-viewer-stage media-fullscreen-stage${interactions.expanded?" is-expanded":""}${video?"":" image-zoom-stage"}${zoom.zoomed?" is-image-zoomed":""}${zoom.dragging?" is-image-dragging":""}`} aria-busy={loading} data-image-scale={video?undefined:zoom.scale} style={{"--media-brightness":interactions.brightness,...zoom.style} as CSSProperties}>
       {!visible && preview && !previewFailed && <img className="media-cover media-visual" src={preview} alt={file.name} width={file.thumb_w || undefined} height={file.thumb_h || undefined} decoding="async" onLoad={zoom.constrain} onError={() => setPreviewFailed(true)} />}
-      {!visible && (!preview || previewFailed) && <div className="preview-message"><p>{blocked || (file.archive_state === "failed" ? "归档失败，请重试归档" : file.archive_state !== "done" ? "归档中…" : previewFailed ? "预览图暂时无法加载" : "暂无预览图，可按需查看原件")}</p>{previewFailed && enabled && <button className="btn" onClick={() => { setPreviewFailed(false); setPreviewAttempt(value => value + 1); }}>重试预览图</button>}</div>}
+      {!visible && (!preview || previewFailed) && !autoLoad && <div className="preview-message"><p>{blocked || (file.archive_state === "failed" ? "归档失败，请重试归档" : file.archive_state !== "done" ? "归档中…" : previewFailed ? "预览图暂时无法加载" : "暂无预览图，可按需查看原件")}</p>{previewFailed && enabled && <button className="btn" onClick={() => { setPreviewFailed(false); setPreviewAttempt(value => value + 1); }}>重试预览图</button>}</div>}
       {enabled && source && (video ? <video ref={videoElement} className={`media-visual${visible ? "" : " original-pending"}`} key={source} src={source} controls controlsList="nofullscreen" playsInline preload="auto" poster={preview || undefined} onLoadedData={ready} onError={() => void failed()} onEnded={() => { if (partIndex + 1 < parts.length) choosePart(partIndex + 1, true); }} /> : <img className={`media-visual${visible ? "" : " original-pending"}`} src={source} alt={file.name} onLoad={ready} onError={() => void failed()} />)}
       {interactions.overlay}
       {zoom.controls}
@@ -147,7 +149,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
       <div className="preview-actions" role="group" aria-label="媒体操作">
         {actions}
         {enabled && <>
-          {!visible && <button className="btn btn-crayon" disabled={loading} onClick={requestPlay}>{loading ? `正在加载${label}…` : stage === "error" ? `重试查看${label}` : video ? `播放视频 · ${fmtSize(currentPart?.size || file.size)}` : `查看原图 · ${fmtSize(file.size)}`}</button>}
+          {!visible && (!autoLoad || stage === "error") && <button className="btn btn-crayon" disabled={loading} onClick={requestPlay}>{loading ? `正在加载${label}…` : stage === "error" ? `重试查看${label}` : video ? `播放视频 · ${fmtSize(currentPart?.size || file.size)}` : `查看原图 · ${fmtSize(file.size)}`}</button>}
           {visible && compatible && <span className="preview-original-label" role="status">兼容查看版本</span>}
           {parts.length > 1 ? <><label className="sr-only" htmlFor={`media-part-${file.id}`}>视频片段</label><select id={`media-part-${file.id}`} className="select" value={partIndex} onChange={event => choosePart(Number(event.target.value))}>{parts.map(part => <option key={part.index} value={part.index}>第 {part.index + 1} / {part.count} 段</option>)}</select><a className="btn" href={api.url(`/files/${encodeURIComponent(file.id)}/download?part=${partIndex}`)} download>下载当前无损片段</a></> : <a className="btn" href={sourceAdapter?.download || api.url(`/files/${encodeURIComponent(file.id)}/download`)} download>下载原件</a>}
         </>}
