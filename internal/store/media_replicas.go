@@ -190,6 +190,87 @@ func (s *Service) verifyMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaR
 	return err
 }
 
+// Local objects can change outside PIMG. Only reuse a receipt while the stored
+// file still has the size and modification time observed during verification.
+func (s *Service) localMediaPartStamp(ctx context.Context, r dbx.MediaReplica, p dbx.MediaPart) (int64, error) {
+	if !s.localSyncInstance(r.InstanceID) {
+		return 0, nil
+	}
+	b, err := s.archiveBackend(r.InstanceID)
+	if err != nil {
+		return 0, err
+	}
+	var ref storage.Reference
+	if err = json.Unmarshal([]byte(p.Reference), &ref); err != nil {
+		return 0, err
+	}
+	input, err := b.Open(ctx, ref)
+	if err != nil {
+		return 0, err
+	}
+	defer input.Close()
+	file, ok := input.(*os.File)
+	if !ok {
+		return 0, nil // Unknown wrappers must still perform full verification.
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if stat.Size() != p.StoredSize {
+		return 0, errors.New("本地存储片段大小已改变")
+	}
+	return stat.ModTime().UnixNano(), nil
+}
+
+func (s *Service) verifyAndStampMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaReplica, p dbx.MediaPart) (dbx.MediaPart, error) {
+	before, err := s.localMediaPartStamp(ctx, r, p)
+	if err != nil {
+		return p, err
+	}
+	if err = s.verifyMediaPart(ctx, f, r, p); err != nil {
+		return p, err
+	}
+	after, err := s.localMediaPartStamp(ctx, r, p)
+	if err != nil {
+		return p, err
+	}
+	if before != after {
+		return p, errors.New("本地存储片段在校验期间发生变化")
+	}
+	p.LocalModNS = after
+	return p, nil
+}
+
+func (s *Service) reuseVerifiedMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaReplica, p dbx.MediaPart) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var ref storage.Reference
+	if !p.Verified || json.Unmarshal([]byte(p.Reference), &ref) != nil || ref.Key == "" {
+		return errors.New("已校验片段的存储位置无效")
+	}
+	if !s.localSyncInstance(r.InstanceID) {
+		// The durable receipt belongs to this replica's immutable policy and
+		// matching source hash/layout. A retry must not download it again.
+		return nil
+	}
+	stamp, err := s.localMediaPartStamp(ctx, r, p)
+	if err != nil {
+		return err
+	}
+	if stamp != 0 && stamp == p.LocalModNS {
+		return nil
+	}
+	// Older releases did not stamp encrypted local parts. Verify once before
+	// persisting a stamp; changed files also pass through the full hash check.
+	p, err = s.verifyAndStampMediaPart(ctx, f, r, p)
+	if err != nil {
+		return err
+	}
+	return s.DB.SaveMediaPart(f.ID, r.InstanceID, p)
+}
+
 func (s *Service) writeMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaReplica, p dbx.MediaPart, path string) (dbx.MediaPart, error) {
 	b, err := s.archiveBackend(r.InstanceID)
 	if err != nil {
@@ -299,18 +380,8 @@ func (s *Service) writeMediaPart(ctx context.Context, f *dbx.File, r dbx.MediaRe
 	if err = s.DB.SaveMediaPart(f.ID, r.InstanceID, p); err != nil {
 		return p, err
 	}
-	if err = s.verifyMediaPart(ctx, f, r, p); err != nil {
+	if p, err = s.verifyAndStampMediaPart(ctx, f, r, p); err != nil {
 		return p, err
-	}
-	if !r.Encrypted {
-		if local, e := b.Open(ctx, ref); e == nil {
-			if file, ok := local.(*os.File); ok {
-				if st, e := file.Stat(); e == nil {
-					p.LocalModNS = st.ModTime().UnixNano()
-				}
-			}
-			local.Close()
-		}
 	}
 	p.Verified = true
 	if err = s.DB.SaveMediaPart(f.ID, r.InstanceID, p); err != nil {
@@ -475,8 +546,10 @@ func (s *Service) writeMediaReplica(ctx context.Context, f *dbx.File, target str
 			kept := false
 			for _, old := range r.Parts {
 				if old.Index == index && old.Verified && old.SHA256 == p.SHA256 && old.Size == p.Size && old.Count == p.Count {
-					if err = s.verifyMediaPart(ctx, f, r, old); err == nil {
+					if err = s.reuseVerifiedMediaPart(ctx, f, r, old); err == nil {
 						kept = true
+					} else if ctx.Err() != nil {
+						return ctx.Err()
 					}
 					break
 				}
@@ -567,7 +640,7 @@ func (s *Service) writeMediaReplica(ctx context.Context, f *dbx.File, target str
 			}
 		}
 		if kept != nil {
-			if err = s.verifyMediaPart(ctx, f, r, *kept); err != nil {
+			if err = s.reuseVerifiedMediaPart(ctx, f, r, *kept); err != nil {
 				return err
 			}
 			continue
@@ -580,6 +653,9 @@ func (s *Service) writeMediaReplica(ctx context.Context, f *dbx.File, target str
 }
 
 func (s *Service) completeMediaReplica(ctx context.Context, f *dbx.File, target string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := s.DB.SetMediaReplicaState(f.ID, target, "ready", ""); err != nil {
 		return err
 	}

@@ -115,10 +115,17 @@ func (s *Server) allowAdminSetup(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) serveForeground(next http.HandlerFunc, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead || strings.HasPrefix(r.URL.Path, "/media/") || strings.HasSuffix(r.URL.Path, "/content") || strings.HasSuffix(r.URL.Path, "/download") || strings.HasSuffix(r.URL.Path, "/export") || strings.HasSuffix(r.URL.Path, "/previews") {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		finish := s.Svc.BeginForeground()
 		defer finish()
+	} else if strings.HasPrefix(r.URL.Path, "/media/") || strings.HasSuffix(r.URL.Path, "/download") || strings.HasSuffix(r.URL.Path, "/export") {
+		finish := s.Svc.BeginForegroundTransfer()
+		defer finish()
 	}
+	// Content handlers distinguish cached thumbnails from original transfers.
+	// Preview reconstruction and original IO apply their own transfer grace;
+	// wrapping these reads in immediate foreground activity cancels idle work
+	// even when browsing only small, already-local thumbnails.
 	next(w, r)
 }
 
