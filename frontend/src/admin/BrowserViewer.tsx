@@ -24,6 +24,7 @@ export default function BrowserViewer({ entry, position, selected, onSelect, onP
   }), [entry]);
   const sourceAdapter = useMemo(() => ({
     autoLoad: true,
+    compatibleFallback: "auto",
     prepare: (compatible: string, retry: boolean, signal: AbortSignal) => prepareBrowserMedia(entry, compatible, retry, signal),
     download: browserContent(entry) + "&download=1",
   }), [entry]);

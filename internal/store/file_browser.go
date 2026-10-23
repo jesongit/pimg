@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ type BrowserListing struct {
 	Recursive          bool              `json:"recursive"`
 	SkippedDirectories int               `json:"skipped_directories"`
 	Snapshot           string            `json:"snapshot,omitempty"`
+	ScanLimited        bool              `json:"scan_limited,omitempty"`
 }
 
 func (s *Service) browserEntry(p string, info fs.FileInfo) BrowserEntry {
@@ -144,7 +146,7 @@ var ErrBrowserViewBusy = errors.New("正在准备的文件较多，请稍后重�
 
 // Probe streams when opening a video, including audio: a browser can otherwise
 // render the picture while silently dropping an unsupported audio track.
-func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string) (string, error) {
+func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, nativeHEVC ...bool) (string, error) {
 	source, entry, err := s.OpenBrowserSource(p, version)
 	if err != nil {
 		return "", err
@@ -160,6 +162,9 @@ func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string) (s
 		return "", err
 	}
 	if !info.HDR && info.PlayableMP4(entry.Ext) {
+		return "", nil
+	}
+	if !info.HDR && (entry.Ext == "mp4" || entry.Ext == "m4v") && len(nativeHEVC) > 0 && nativeHEVC[0] && info.VideoStreams == 1 && info.VideoCodec == "hevc" && info.PixelFormat == "yuv420p" && info.AllAudioCompatible {
 		return "", nil
 	}
 	if !info.HDR && info.AllVideoCompatible && info.AllAudioCompatible {
@@ -204,7 +209,7 @@ func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode strin
 		return OriginalView{}, ErrBrowserViewBusy
 	}
 	jobCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
-	job := &originalJob{view: OriginalView{Status: "loading", Total: entry.Size}, cancel: cancel, done: make(chan struct{}), fileID: "browser:" + entry.Path}
+	job := &originalJob{view: OriginalView{Status: "loading", Total: entry.Size, Phase: "queued"}, cancel: cancel, done: make(chan struct{}), fileID: "browser:" + entry.Path}
 	cache.jobs[key] = job
 	cache.wg.Add(1)
 	go func() {
@@ -214,7 +219,11 @@ func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode strin
 		var conversionErr error
 		select {
 		case cache.slots <- struct{}{}:
-			conversionErr = s.makeBrowserCompatible(jobCtx, entry, mode)
+			conversionErr = s.makeBrowserCompatible(jobCtx, entry, mode, func(phase string, percent int) {
+				cache.mu.Lock()
+				job.view.Phase, job.view.Percent = phase, max(job.view.Percent, min(99, percent))
+				cache.mu.Unlock()
+			})
 			<-cache.slots
 		case <-jobCtx.Done():
 			conversionErr = jobCtx.Err()
@@ -230,29 +239,13 @@ func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode strin
 	return job.view, nil
 }
 
-func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry, mode string) error {
+func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry, mode string, progress func(string, int)) error {
 	source, _, err := s.OpenBrowserSource(entry.Path, entry.Version)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
-	root, err := openImportRoot(filepath.Dir(entry.Path))
-	if err != nil {
-		return err
-	}
-	defer root.Close()
 	if err = os.MkdirAll(s.originalCacheDir(), 0700); err != nil {
-		return err
-	}
-	// Snapshot only files which actually need compatibility processing. Converters
-	// receive our private snapshot, never a path they could write in the source tree.
-	input, err := os.CreateTemp(s.originalCacheDir(), "browser-source-*.part")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(input.Name())
-	_, copyErr := io.Copy(input, importGuard{ctx: ctx, file: source, root: root, path: filepath.Base(entry.Path), version: entry.Version})
-	if err = errors.Join(copyErr, input.Close()); err != nil {
 		return err
 	}
 	output, err := os.CreateTemp(s.originalCacheDir(), "browser-view-*.part")
@@ -261,14 +254,49 @@ func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry,
 	}
 	output.Close()
 	defer os.Remove(output.Name())
-	if err = mediax.MakeCompatible(ctx, input.Name(), output.Name(), entry.Kind, mode); err != nil {
+	phase := mode
+	if entry.Kind == "image" {
+		phase = "image"
+	}
+	update := func(value float64) { progress(phase, int(value*99)) }
+	if runtime.GOOS == "linux" && entry.Kind == "video" {
+		progress(phase, 0)
+		err = mediax.MakeCompatibleFile(ctx, source, output.Name(), mode, update)
+	} else {
+		// Platforms without inherited seekable descriptors retain the guarded
+		// snapshot path. Images keep the same converter isolation as before.
+		root, e := openImportRoot(filepath.Dir(entry.Path))
+		if e != nil {
+			return e
+		}
+		defer root.Close()
+		input, e := os.CreateTemp(s.originalCacheDir(), "browser-source-*.part")
+		if e != nil {
+			return e
+		}
+		defer os.Remove(input.Name())
+		progress("copy", 0)
+		var copied int64
+		_, copyErr := io.Copy(progressWriter{input, func(n int) { copied += int64(n); progress("copy", int(copied*10/max(1, entry.Size))) }}, importGuard{ctx: ctx, file: source, root: root, path: filepath.Base(entry.Path), version: entry.Version})
+		if e = errors.Join(copyErr, input.Close()); e != nil {
+			return e
+		}
+		progress(phase, 10)
+		err = mediax.MakeCompatibleProgress(ctx, input.Name(), output.Name(), entry.Kind, mode, func(value float64) { progress(phase, 10+int(value*89)) })
+	}
+	if err != nil {
 		return err
 	}
 	check, _, err := s.OpenBrowserSource(entry.Path, entry.Version)
 	if err != nil {
 		return err
 	}
+	before, beforeErr := source.Stat()
+	after, afterErr := check.Stat()
 	check.Close()
+	if beforeErr != nil || afterErr != nil || !os.SameFile(before, after) {
+		return ErrSourceChanged
+	}
 	if err = os.Rename(output.Name(), s.browserCompatiblePath(entry, mode)); err != nil {
 		return fmt.Errorf("保存兼容查看缓存失败: %w", err)
 	}

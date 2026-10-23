@@ -12,6 +12,7 @@ type Stage = "idle" | "preparing" | "loading" | "decoding" | "ready" | "error";
 
 export type MediaSourceAdapter = {
   autoLoad?: boolean;
+  compatibleFallback?: string;
   prepare: (compatible: string, retry: boolean, signal: AbortSignal) => Promise<OriginalView>;
   download: string;
 };
@@ -48,6 +49,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   const autoLoad = !!sourceAdapter?.autoLoad;
   const [requested, setRequested] = useState(autoLoad || !video && !!file.local_ready), [attempt, setAttempt] = useState(0);
   const [stage, setStage] = useState<Stage>("idle"), [percent, setPercent] = useState(0);
+  const [preparationPhase, setPreparationPhase] = useState("");
   const [source, setSource] = useState(""), [visible, setVisible] = useState(false), [error, setError] = useState("");
   const [previewFailed, setPreviewFailed] = useState(false), [previewAttempt, setPreviewAttempt] = useState(0);
   const [partIndex, setPartIndex] = useState(0), [compatible, setCompatible] = useState("");
@@ -84,11 +86,12 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     if (!requested || !enabled) return;
     let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController(); activeSignal.current = controller.signal;
-    setStage("preparing"); setPercent(0); setError(""); setVisible(false); setSource("");
+    setStage("preparing"); setPercent(0); setPreparationPhase(""); setError(""); setVisible(false); setSource("");
     const poll = async (retry: boolean) => {
       try {
         const result = sourceAdapter ? await sourceAdapter.prepare(compatible, retry, controller.signal) : await api.post<OriginalView>(`/files/${encodeURIComponent(file.id)}/original`, { retry, ...(file.media_version === 2 ? { part: partIndex, compatible } : {}) });
         if (stopped) return;
+        setPreparationPhase(result.phase || "");
         if (sourceAdapter && result.compatible && result.compatible !== compatible) { setCompatible(result.compatible); return; }
         if (result.status === "failed") { if(video && compatible === "remux") { setCompatible("transcode"); return; } throw new Error(result.error || "原件加载失败，请重试。"); }
         if (result.status !== "ready" || !result.url) {
@@ -127,6 +130,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
         URL.revokeObjectURL(objectURL.current); objectURL.current = url; setSource(url); return;
       } catch { if (activeSignal.current?.aborted) return; }
     }
+    if (video && !compatible && sourceAdapter?.compatibleFallback) { setCompatible(sourceAdapter.compatibleFallback); return; }
     if (file.media_version === 2 && compatible !== (video ? "transcode" : "image")) {
       setCompatible(video ? compatible === "remux" ? "transcode" : "remux" : "image"); return;
     }
@@ -134,7 +138,8 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   };
   const choosePart = (index: number, autoplay = false) => { expectedTime.current=0;playNext.current = autoplay;requestedRef.current=true;setPartIndex(index); setCompatible(""); setRequested(true); setAttempt(value => value + 1); };
   const label = video ? "视频" : "原图";
-  const phase = stage === "preparing" ? `准备${label}` : stage === "decoding" ? "正在解码原图" : `加载${label}`;
+  const phaseLabels: Record<string, string> = { queued: "等待兼容处理", copy: "准备兼容处理", remux: "整理视频封装", transcode: "转换兼容视频", image: "转换兼容图片" };
+  const phase = stage === "preparing" ? (phaseLabels[preparationPhase] || `准备${label}`) : stage === "decoding" ? "正在解码原图" : `加载${label}`;
   return <>
     <div ref={stageElement} {...zoom.bind} className={`dpreview progressive-preview media-viewer-stage media-fullscreen-stage${interactions.expanded?" is-expanded":""}${video?"":" image-zoom-stage"}${zoom.zoomed?" is-image-zoomed":""}${zoom.dragging?" is-image-dragging":""}`} aria-busy={loading} data-image-scale={video?undefined:zoom.scale} style={{"--media-brightness":interactions.brightness,...zoom.style} as CSSProperties}>
       {!visible && preview && !previewFailed && <img className="media-cover media-visual" src={preview} alt={file.name} width={file.thumb_w || undefined} height={file.thumb_h || undefined} decoding="async" onLoad={zoom.constrain} onError={() => setPreviewFailed(true)} />}
@@ -142,7 +147,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
       {enabled && source && (video ? <video ref={videoElement} className={`media-visual${visible ? "" : " original-pending"}`} key={source} src={source} controls controlsList="nofullscreen" playsInline preload="auto" poster={preview || undefined} onLoadedData={ready} onError={() => void failed()} onEnded={() => { if (partIndex + 1 < parts.length) choosePart(partIndex + 1, true); }} /> : <img className={`media-visual${visible ? "" : " original-pending"}`} src={source} alt={file.name} onLoad={ready} onError={() => void failed()} />)}
       {interactions.overlay}
       {zoom.controls}
-      {loading && <MediaLoading label={phase} percent={stage === "preparing" || stage === "loading" && !video ? percent : undefined}/>}
+      {loading && <MediaLoading label={phase} percent={stage === "preparing" && preparationPhase !== "queued" || stage === "loading" && !video ? percent : undefined}/>}
     </div>
     <div ref={dock} className="detail-action-dock">
       {status && <div className="detail-status-strip" aria-label="媒体状态">{status}</div>}

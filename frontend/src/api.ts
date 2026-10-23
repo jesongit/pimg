@@ -273,6 +273,7 @@ export interface OriginalView {
   loaded: number;
   total: number;
   percent: number;
+  phase?: string;
   source?: string;
   expires_at?: number;
   error?: string;

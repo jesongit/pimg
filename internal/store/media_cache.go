@@ -35,6 +35,7 @@ type OriginalView struct {
 	Loaded    int64  `json:"loaded"`
 	Total     int64  `json:"total"`
 	Percent   int    `json:"percent"`
+	Phase     string `json:"phase,omitempty"`
 	Source    string `json:"source,omitempty"`
 	ExpiresAt int64  `json:"expires_at,omitempty"`
 	Error     string `json:"error,omitempty"`

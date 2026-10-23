@@ -102,6 +102,32 @@ func TestFileBrowserRecursiveMediaSnapshotAndRefresh(t *testing.T) {
 	}
 }
 
+func TestFileBrowserFilesystemRootCannotExpand(t *testing.T) {
+	s := importServer(t)
+	root := filepath.VolumeName(t.TempDir()) + string(os.PathSeparator)
+	w := fileBrowserRequest(t, s)("GET", "/api/admin/file-browser?"+url.Values{"path": {root}, "recursive": {"1"}}.Encode(), nil, "")
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "根目录不支持展开") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestFileBrowserRecursiveLimitReturnsLocatedPartialResults(t *testing.T) {
+	s := importServer(t)
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "visible.png"), []byte("source"), 0600)
+	nested := root
+	for i := 0; i < 130; i++ {
+		nested = filepath.Join(nested, "d")
+		if err := os.Mkdir(nested, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listing := expandedBrowserListing(t, s, root, "", "name", "", 0)
+	if !listing.ScanLimited || listing.Total != 1 || listing.Items[0].Name != "visible.png" || listing.Snapshot == "" {
+		t.Fatal("limit hid the whole directory", listing)
+	}
+}
+
 func TestFileBrowserCreationAndModificationOrdering(t *testing.T) {
 	s := importServer(t)
 	root := t.TempDir()

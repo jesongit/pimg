@@ -2,6 +2,7 @@ package store
 
 import (
 	"cmp"
+	"container/heap"
 	"context"
 	"errors"
 	"io"
@@ -37,6 +38,8 @@ type browserCache struct {
 const browserCacheBytes = 24 << 20
 const browserMaxEntries = 50_000
 const browserMaxVisited = 100_000
+
+var errBrowserScanLimit = errors.New("文件展开范围超过扫描上限")
 
 func (c *browserCache) scanSlot() chan struct{} {
 	c.mu.Lock()
@@ -99,45 +102,89 @@ func browserCreationTime(ctx context.Context, root *os.Root, relative string, en
 
 func sortBrowserEntries(items []BrowserEntry, ordering string) {
 	sort.Slice(items, func(i, j int) bool {
-		a, b := items[i], items[j]
-		if a.Directory != b.Directory {
-			return a.Directory
-		}
-		if !a.Directory {
-			switch ordering {
-			case "size_desc", "size_asc":
-				if a.Size != b.Size {
-					return (a.Size > b.Size) == (ordering == "size_desc")
-				}
-			case "type", "type_desc":
-				if a.Ext != b.Ext {
-					return (a.Ext > b.Ext) == (ordering == "type_desc")
-				}
-			case "created_desc", "created_asc", "modified_desc", "modified_asc":
-				x, y := a.modifiedNS, b.modifiedNS
-				if strings.HasPrefix(ordering, "created_") {
-					x, y = a.createdNS, b.createdNS
-					if (x == 0) != (y == 0) {
-						return x != 0 // Missing birth times stay last in either direction.
-					}
-				}
-				if x != y {
-					return (x > y) == strings.HasSuffix(ordering, "_desc")
+		return browserEntryLess(items[i], items[j], ordering)
+	})
+}
+
+func browserEntryLess(a, b BrowserEntry, ordering string) bool {
+	if a.Directory != b.Directory {
+		return a.Directory
+	}
+	if !a.Directory {
+		switch ordering {
+		case "size_desc", "size_asc":
+			if a.Size != b.Size {
+				return (a.Size > b.Size) == (ordering == "size_desc")
+			}
+		case "type", "type_desc":
+			if a.Ext != b.Ext {
+				return (a.Ext > b.Ext) == (ordering == "type_desc")
+			}
+		case "created_desc", "created_asc", "modified_desc", "modified_asc":
+			x, y := a.modifiedNS, b.modifiedNS
+			if strings.HasPrefix(ordering, "created_") {
+				x, y = a.createdNS, b.createdNS
+				if (x == 0) != (y == 0) {
+					return x != 0 // Missing birth times stay last in either direction.
 				}
 			}
+			if x != y {
+				return (x > y) == strings.HasSuffix(ordering, "_desc")
+			}
 		}
-		nameOrder := cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-		if nameOrder == 0 {
-			nameOrder = cmp.Compare(a.Name, b.Name)
-		}
-		if nameOrder == 0 {
-			nameOrder = cmp.Compare(a.RelativePath, b.RelativePath)
-		}
-		if ordering == "name_desc" {
-			return nameOrder > 0
-		}
-		return nameOrder < 0
-	})
+	}
+	nameOrder := cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	if nameOrder == 0 {
+		nameOrder = cmp.Compare(a.Name, b.Name)
+	}
+	if nameOrder == 0 {
+		nameOrder = cmp.Compare(a.RelativePath, b.RelativePath)
+	}
+	if ordering == "name_desc" {
+		return nameOrder > 0
+	}
+	return nameOrder < 0
+}
+
+// Ordinary directories retain only the requested sort window. A folder with
+// 100,000 entries must not need 100,000 BrowserEntry objects to show page one.
+type browserWindow struct {
+	items        []BrowserEntry
+	ordering     string
+	limit, bytes int
+}
+
+func (w browserWindow) Len() int { return len(w.items) }
+func (w browserWindow) Less(i, j int) bool {
+	return browserEntryLess(w.items[j], w.items[i], w.ordering)
+}
+func (w browserWindow) Swap(i, j int) { w.items[i], w.items[j] = w.items[j], w.items[i] }
+func browserEntryBytes(e BrowserEntry) int {
+	return 192 + len(e.Path) + len(e.RelativePath) + len(e.Name) + len(e.MIME) + len(e.Version) + len(e.Ext)
+}
+func (w *browserWindow) Push(x any) {
+	e := x.(BrowserEntry)
+	w.items = append(w.items, e)
+	w.bytes += browserEntryBytes(e)
+}
+func (w *browserWindow) Pop() any {
+	last := w.items[len(w.items)-1]
+	w.items = w.items[:len(w.items)-1]
+	w.bytes -= browserEntryBytes(last)
+	return last
+}
+func (w *browserWindow) add(e BrowserEntry) error {
+	if len(w.items) < w.limit {
+		heap.Push(w, e)
+	} else if browserEntryLess(e, w.items[0], w.ordering) {
+		w.bytes += browserEntryBytes(e) - browserEntryBytes(w.items[0])
+		w.items[0] = e
+		heap.Fix(w, 0)
+	}
+	if w.bytes > browserCacheBytes {
+		return errors.New("分页范围过大，请使用搜索缩小范围后浏览")
+	}
+	return nil
 }
 
 func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset int, ordering string, options ...BrowserOptions) (BrowserListing, error) {
@@ -164,6 +211,9 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 	}
 	if !node.Directory {
 		node.Path = filepath.Dir(node.Path)
+	}
+	if opts.Recursive && filepath.Dir(node.Path) == node.Path {
+		return BrowserListing{}, errors.New("根目录不支持展开，请先进入子文件夹")
 	}
 	root, err := openImportRoot(node.Path)
 	if err != nil {
@@ -204,6 +254,7 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 			}
 		}
 		visited, bytes := 0, 0
+		window := browserWindow{ordering: ordering, limit: offset + 200}
 		var walk func(*os.Root, string, int) error
 		walk = func(current *os.Root, relative string, depth int) error {
 			dir, err := current.Open(".")
@@ -221,8 +272,8 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 						return err
 					}
 					visited++
-					if visited > browserMaxVisited || depth > 128 {
-						return errors.New("目录内容过多或层级过深，请进入更小的子文件夹后展开")
+					if opts.Recursive && (visited > browserMaxVisited || depth > 128) {
+						return errBrowserScanLimit
 					}
 					if item.Type()&os.ModeSymlink != 0 {
 						continue
@@ -233,6 +284,10 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 					}
 					rel := filepath.Join(relative, item.Name())
 					if opts.Recursive && info.IsDir() {
+						if depth >= 128 {
+							out.ScanLimited = true
+							continue
+						}
 						child, e := current.OpenRoot(item.Name())
 						if e != nil {
 							out.SkippedDirectories++
@@ -269,10 +324,17 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 					if strings.HasPrefix(ordering, "created_") && !entry.Directory {
 						browserCreationTime(ctx, root, rel, &entry)
 					}
-					bytes += 192 + len(entry.Path) + len(entry.RelativePath) + len(entry.Name) + len(entry.MIME) + len(entry.Version) + len(entry.Ext)
-					if len(out.Items) >= browserMaxEntries || bytes > browserCacheBytes {
-						return errors.New("文件列表过大，请进入更小的子文件夹后浏览")
+					if !opts.Recursive {
+						out.Total++
+						if err := window.add(entry); err != nil {
+							return err
+						}
+						continue
 					}
+					if len(out.Items) >= browserMaxEntries || bytes+browserEntryBytes(entry) > browserCacheBytes {
+						return errBrowserScanLimit
+					}
+					bytes += browserEntryBytes(entry)
 					out.Items = append(out.Items, entry)
 				}
 				if errors.Is(readErr, io.EOF) {
@@ -283,17 +345,22 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 				}
 			}
 		}
-		if err = walk(root, "", 0); err != nil {
+		if err = walk(root, "", 0); errors.Is(err, errBrowserScanLimit) {
+			out.ScanLimited = true
+		} else if err != nil {
 			return BrowserListing{}, err
 		}
+		if !opts.Recursive {
+			out.Items = window.items
+		}
 		sortBrowserEntries(out.Items, ordering)
-		out.Total = len(out.Items)
 		if opts.Recursive {
+			out.Total = len(out.Items)
 			out = s.browser.save(key, out, bytes)
 		}
 	}
 	start := min(offset, out.Total)
-	end := min(start+200, out.Total)
+	end := min(start+200, len(out.Items))
 	if end < out.Total {
 		out.NextOffset = end
 	}

@@ -374,6 +374,37 @@ func TestFileBrowserVideoFormatsWatchableWithoutImport(t *testing.T) {
 	}
 }
 
+func TestFileBrowserHEVCRespectsNativeSupportAndFallback(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	s := importServer(t)
+	root := t.TempDir()
+	p := filepath.Join(root, "native.mp4")
+	if out, err := exec.Command("ffmpeg", "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=8", "-t", "0.5", "-c:v", "libx265", "-x265-params", "pools=1:frame-threads=1", "-pix_fmt", "yuv420p", p).CombinedOutput(); err != nil {
+		t.Skipf("HEVC encoder unavailable: %v %s", err, out)
+	}
+	entry := browserListing(t, s, root, "native.mp4", 0).Items[0]
+	mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version)
+	if err != nil || mode != "transcode" {
+		t.Fatal("unsupported clients must receive compatibility video", mode, err)
+	}
+	mode, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, true)
+	if err != nil || mode != "" {
+		t.Fatal("native HEVC was forced to transcode", mode, err)
+	}
+	for _, native := range []bool{false, true} {
+		body, _ := json.Marshal(map[string]any{"path": p, "version": entry.Version, "compatible": "auto", "native_hevc": native})
+		w := fileBrowserRequest(t, s)("POST", "/api/admin/file-browser/view", bytes.NewReader(body), "")
+		var response struct {
+			Compatible string `json:"compatible"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Compatible != "transcode" {
+			t.Fatal("native failure must not loop back to native playback", w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestFileBrowserImageFormatMetadata(t *testing.T) {
 	s := importServer(t)
 	root := t.TempDir()

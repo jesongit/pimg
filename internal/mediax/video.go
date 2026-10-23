@@ -33,8 +33,12 @@ type VideoInfo struct {
 }
 
 func InspectVideo(ctx context.Context, path string) (VideoInfo, error) {
+	return inspectVideo(exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,color_transfer:format=duration,start_time,format_name", "-of", "json", path))
+}
+
+func inspectVideo(cmd *exec.Cmd) (VideoInfo, error) {
 	var info VideoInfo
-	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,color_transfer:format=duration,start_time,format_name", "-of", "json", path).Output()
+	out, err := cmd.Output()
 	if err != nil {
 		return info, errors.New("无法读取视频，请确认 ffmpeg 和 ffprobe 已安装且文件有效")
 	}

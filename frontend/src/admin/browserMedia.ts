@@ -10,6 +10,7 @@ export type BrowserListing = {
   path: string; parent: string; breadcrumbs: BrowserLocation[];
   items: BrowserEntry[]; total: number; next_offset: number;
   recursive: boolean; skipped_directories: number; snapshot?: string;
+  scan_limited?: boolean;
 };
 export const browserBase = "/api/admin/file-browser";
 
@@ -36,13 +37,15 @@ export async function prepareBrowserMedia(entry: BrowserEntry, compatible: strin
     const response = await fetch(`${browserBase}/view`, {
       method: "POST", credentials: "same-origin", signal,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: entry.path, version: entry.version, compatible, retry }),
+      body: JSON.stringify({ path: entry.path, version: entry.version, compatible, retry,
+        native_hevc: !compatible && entry.kind === "video" && !!document.createElement("video").canPlayType('video/mp4; codecs="hvc1.1.6.L120.B0"'),
+      }),
     });
     if (response.status === 429) { await pause(signal); continue; }
     const result = await response.json();
     if (!response.ok) {
       if (response.status === 401) window.dispatchEvent(new Event("pimg:unauthorized"));
-      throw new Error(result.error || "文件无法读取，请刷新目录后重试。");
+      throw new Error(result.error?.message || (typeof result.error === "string" ? result.error : "文件无法读取，请刷新目录后重试。"));
     }
     return result;
   }

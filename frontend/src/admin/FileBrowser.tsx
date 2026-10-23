@@ -31,6 +31,7 @@ const columns = [
 ];
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 function fileTime(value: number) { return value ? dateFormat.format(new Date(value * 1000)) : "—"; }
+function isRootPath(value: string) { return /^(?:\/+|[a-z]:[\\/]*|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*)$/i.test(value); }
 
 export default function FileBrowser() {
   const { actor } = useGallery(), toast = useToast();
@@ -38,7 +39,14 @@ export default function FileBrowser() {
   const [params, setParams] = useSearchParams();
   const [initialPath] = useState(() => { try { return sessionStorage.getItem(storageKey + ":last") || ""; } catch { return ""; } });
   const path = params.get("path") ?? initialPath, query = params.get("q") || "";
-  const recursive = params.get("recursive") === "1";
+  const previousPath = useRef(path), pathChanged = previousPath.current !== path;
+  const recursive = params.get("recursive") === "1" && !pathChanged && !isRootPath(path);
+  useEffect(() => {
+    previousPath.current = path;
+    if ((pathChanged || isRootPath(path)) && params.has("recursive")) {
+      const next = new URLSearchParams(params); next.delete("recursive"); setParams(next, { replace: true });
+    }
+  }, [path, pathChanged, params, setParams]);
   const requestedSort = params.get("sort") || "name", sort = sortOptions.some(option => option.value === requestedSort) ? requestedSort : "name";
   const [search, setSearch] = useState(query);
   const [data, setData] = useState<BrowserListing | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
@@ -54,8 +62,13 @@ export default function FileBrowser() {
     reveal(); const observer = new ResizeObserver(reveal); observer.observe(nav);
     return () => observer.disconnect();
   }, [data?.path]);
-  const visit = useCallback((next: string) => { setSearch(""); setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(recursive ? { recursive: "1" } : {}) }); }, [setParams, sort, recursive]);
+  const visit = useCallback((next: string) => { setSearch(""); setParams({ path: next, ...(sort !== "name" ? { sort } : {}) }); }, [setParams, sort]);
   const changeSort = (value: string) => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(value !== "name" ? { sort: value } : {}), ...(recursive ? { recursive: "1" } : {}) });
+  const toggleExpanded = () => {
+    const currentPath = data?.path || path;
+    previousPath.current = currentPath;
+    setParams({ path: currentPath, ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(!recursive ? { recursive: "1" } : {}) });
+  };
   useEffect(() => {
     const controller = new AbortController(), request = ++sequence.current;
     setLoading(true); setError(""); setData(null); setSelected(new Set()); setDetail(null); anchor.current = null; setMore(false);
@@ -115,7 +128,7 @@ export default function FileBrowser() {
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-up" aria-label="上一级" title="上一级" disabled={!data || data.parent === data.path || loading} onClick={() => data && visit(data.parent)}><IconArrowUp size={17} /></button>
         <FileBookmarks locations={bookmarks.locations} currentPath={data?.path} onVisit={visit} onRemove={bookmarks.remove} />
         <nav ref={breadcrumbs} className="file-browser-breadcrumbs" aria-label="文件夹路径">{folderNav.map((item, index) => <span key={item.path}>{index > 0 && <IconChevronRight size={13} />}<button type="button" className="text-button" title={item.path} aria-current={index === folderNav.length - 1 ? "location" : undefined} onClick={() => visit(item.path)}>{item.name}</button></span>)}</nav>
-        <button type="button" className="btn btn-ghost file-browser-icon file-browser-expand" aria-label={recursive ? "收起所有文件" : "展开所有文件"} title={recursive ? "收起所有文件，返回逐层浏览" : "展开当前目录及子目录中的所有图片和视频"} aria-pressed={recursive} disabled={loading || !data && !recursive} onClick={() => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(!recursive ? { recursive: "1" } : {}) })}><IconFolders size={17} /></button>
+        <button type="button" className="btn btn-ghost file-browser-icon file-browser-expand" aria-label={recursive ? "收起所有文件" : "展开所有文件"} title={data && data.parent === data.path || isRootPath(path) ? "根目录不支持展开，请先进入子文件夹" : recursive ? "收起所有文件，返回逐层浏览" : "展开当前目录及子目录中的所有图片和视频"} aria-pressed={recursive} disabled={loading || !data && !recursive || !!data && data.parent === data.path || isRootPath(path)} onClick={toggleExpanded}><IconFolders size={17} /></button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} title={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} aria-pressed={bookmarks.saved} disabled={!data || loading} onClick={bookmarks.toggle}>{bookmarks.saved ? <IconStarFilled size={17} /> : <IconStar size={17} />}</button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label="刷新目录" title="刷新目录" disabled={loading} onClick={() => setRevision(value => value + 1)}><IconRefresh size={17} /></button>
       </div>
@@ -123,13 +136,14 @@ export default function FileBrowser() {
         <SelectAllControl checked={allSelected} indeterminate={selected.size > 0 && !allSelected} disabled={!selectable.length || loading} scope="全选已加载的可导入文件" onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(entry => entry.path)))} />
         <label className="file-browser-search"><IconSearch size={16} /><input className="input" aria-label={recursive ? "搜索所有图片和视频" : "搜索当前目录"} placeholder={recursive ? "搜索所有图片和视频" : "搜索当前目录"} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="btn btn-ghost" aria-label="清除文件搜索" onClick={() => setSearch("")}><IconX size={15} /></button>}</label>
         <FilterSelect label="文件排序" value={sort} displayLabel={sortLabels[sort]} options={sortOptions} active={sort !== "name"} width={208} onChange={changeSort} />
-        <span className="file-browser-count" role="status">{data ? `${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : ""}</span>
+        <span className="file-browser-count" role="status">{data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : ""}</span>
         <span className="file-browser-readonly">源文件只读</span>
         <button type="button" className="btn" disabled={!data || loading || !!query} title={query ? "清除搜索后可导入当前目录" : "选择相册后导入，可包含子目录"} onClick={() => data && importPaths([data.path], true)}>导入当前目录</button>
       </div>
     </div>
     <div className="file-browser-content" aria-busy={loading}>
-      {error ? <div className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></div> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
+      {!!data?.scan_limited && <p className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</p>}
+      {error ? <div className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></div> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
         {!!data?.skipped_directories && <p className="file-browser-warning" role="status">有 {data.skipped_directories} 个子文件夹无法读取，已展示其余可读取的文件。</p>}
         <div ref={root} className={`file-browser-list${drag.active ? " is-drag-selecting" : ""}`} {...drag.bind}>
           <table className="browser-table" aria-label={recursive ? "所有图片和视频" : "文件列表"}>

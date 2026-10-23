@@ -58,16 +58,20 @@ func (s *Server) handleBrowserView(w http.ResponseWriter, r *http.Request) {
 		Version    string `json:"version"`
 		Compatible string `json:"compatible"`
 		Retry      bool   `json:"retry"`
+		NativeHEVC bool   `json:"native_hevc"`
 	}
 	if err := readJSONBody(r, &req, 16<<10); err != nil {
 		fail(w, 400, "文件查看参数无效")
 		return
 	}
-	if req.Compatible == "" {
-		mode, err := s.Svc.BrowserPlaybackMode(r.Context(), req.Path, req.Version)
+	if req.Compatible == "" || req.Compatible == "auto" {
+		mode, err := s.Svc.BrowserPlaybackMode(r.Context(), req.Path, req.Version, req.Compatible == "" && req.NativeHEVC)
 		if err != nil {
 			fail(w, 409, err.Error())
 			return
+		}
+		if req.Compatible == "auto" && mode == "" {
+			mode = "remux"
 		}
 		req.Compatible = mode
 	}
