@@ -71,7 +71,7 @@ func (s *Service) StorageConnectionView() map[string]any {
 	if u, err := url.Parse(proxy); err == nil && u.User != nil {
 		proxy = ""
 	}
-	return map[string]any{"proxy_url": proxy, "has_proxy": c.ProxyURL != "", "api_id": c.APIID, "has_api_hash": c.APIHash != ""}
+	return map[string]any{"proxy_url": proxy, "has_proxy": c.ProxyURL != "", "api_id": c.APIID, "has_api_hash": c.APIHash != "", "proxy_traffic": s.ProxyTrafficView()}
 }
 
 // SaveStorageConnection never replaces the master key or the Telegram session.
@@ -139,8 +139,13 @@ func (s *Service) SaveStorageConnection(ctx context.Context, proxy *string, apiI
 		r.mu.Unlock()
 		r.makeClientLocked()
 		if root != nil && root.Err() == nil {
-			return r.launchLocked()
+			if err := r.launchLocked(); err != nil {
+				return err
+			}
 		}
+	}
+	if old.ProxyURL != c.ProxyURL {
+		return s.wakeProxyTrafficTasks()
 	}
 	return nil
 }

@@ -700,7 +700,7 @@ func (s *Service) runMediaArchive(ctx context.Context, f *dbx.File, publish bool
 		}
 	}
 	if err != nil {
-		_ = s.DB.SetArchiveState(f.ID, "failed", err.Error())
+		_ = s.setArchiveFailure(ctx, f.ID, err)
 		return err
 	}
 	if err = s.archiveThumbs(ctx, f, s.plainPath(f.ID)); err != nil {

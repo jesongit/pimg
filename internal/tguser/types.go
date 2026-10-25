@@ -5,18 +5,21 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"pimg/internal/proxytraffic"
 )
 
 type Options struct {
-	APIID       int
-	APIHash     string
-	SessionFile string
-	SessionKey  []byte
-	ProxyURL    string
-	Logger      *slog.Logger
-	OnMessage   func(Message)
-	OnReady     func()      // Authorized primary connection, including reconnections.
-	OnGap       func(int64) // Missing updates for a channel, or zero for a global gap.
+	APIID        int
+	APIHash      string
+	SessionFile  string
+	SessionKey   []byte
+	ProxyURL     string
+	ProxyTraffic *proxytraffic.Meter
+	Logger       *slog.Logger
+	OnMessage    func(Message)
+	OnReady      func()      // Authorized primary connection, including reconnections.
+	OnGap        func(int64) // Missing updates for a channel, or zero for a global gap.
 }
 
 type Status struct {

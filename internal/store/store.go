@@ -30,6 +30,7 @@ import (
 	"pimg/internal/dbx"
 	"pimg/internal/ids"
 	"pimg/internal/mediax"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/r2x"
 	"pimg/internal/storage"
 	"pimg/internal/tguser"
@@ -60,6 +61,7 @@ type Service struct {
 	replicaDrivers map[string]ReplicaDriver
 	extraDrivers   []DriverDefinition
 	connection     connectionState
+	proxyTraffic   *proxytraffic.Meter
 	storages       storageRuntime
 	activity       syncActivity
 	localImportMu  sync.Mutex
@@ -89,6 +91,9 @@ func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client,
 		return nil, err
 	}
 	if err := s.initStorageConnection(); err != nil {
+		return nil, err
+	}
+	if err := s.initProxyTraffic(); err != nil {
 		return nil, err
 	}
 	if err := s.initDynamic(); err != nil {
@@ -124,6 +129,11 @@ func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client,
 		return nil, err
 	}
 	s.restoreBrowserIndex()
+	// Reassess waiting routes once after restart (environment NO_PROXY may have
+	// changed). A still-exhausted proxy requeues without consuming an attempt.
+	if err := s.wakeProxyTrafficTasks(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -361,7 +371,7 @@ func (s *Service) runDirectArchive(ctx context.Context, f *dbx.File, publish boo
 		plain := s.plainPath(fileID)
 		// 1. 明文分片直传冷存储，复用同一分片通道。
 		if err := s.uploadChunksFromFile(ctx, f, plain, "data"); err != nil {
-			s.DB.SetArchiveState(fileID, "failed", err.Error())
+			s.setArchiveFailure(ctx, fileID, err)
 			return err
 		}
 		// 2. 缩略图（同样明文存底）
@@ -369,7 +379,7 @@ func (s *Service) runDirectArchive(ctx context.Context, f *dbx.File, publish boo
 			s.Log.Warn("直发缩略图生成失败", "file", fileID, "err", err)
 		}
 		if _, err := s.Verify(ctx, fileID); err != nil {
-			s.DB.SetArchiveState(fileID, "failed", err.Error())
+			s.setArchiveFailure(ctx, fileID, err)
 			return err
 		}
 		if err := s.DB.SetArchiveState(fileID, "done", ""); err != nil {
@@ -439,13 +449,13 @@ func (s *Service) runEncryptedArchive(ctx context.Context, f *dbx.File) error {
 
 	// 阶段 1：加密（若上次已完整加密则复用密文文件，保证分片续传一致）。
 	if err := s.ensureCiphertext(f, plain, ct, done); err != nil {
-		s.DB.SetArchiveState(fileID, "failed", err.Error())
+		s.setArchiveFailure(ctx, fileID, err)
 		return err
 	}
 
 	// 阶段 2：分片上传。
 	if err := s.uploadChunksFromFile(ctx, f, ct, "data"); err != nil {
-		s.DB.SetArchiveState(fileID, "failed", err.Error())
+		s.setArchiveFailure(ctx, fileID, err)
 		return err
 	}
 
@@ -458,7 +468,7 @@ func (s *Service) runEncryptedArchive(ctx context.Context, f *dbx.File) error {
 	// Do not discard the only local original until the remote archive can be
 	// recovered with the recorded hash, including after a resumed transfer.
 	if _, err := s.Verify(ctx, fileID); err != nil {
-		s.DB.SetArchiveState(fileID, "failed", err.Error())
+		s.setArchiveFailure(ctx, fileID, err)
 		return err
 	}
 	if err := s.DB.SetArchiveState(fileID, "done", ""); err != nil {

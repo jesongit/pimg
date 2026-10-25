@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/store"
 )
 
@@ -82,7 +83,8 @@ func (s *Server) handleRetiredStorageImports(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleStorageConnection(w http.ResponseWriter, r *http.Request) {
 	var p struct {
-		ProxyURL *string `json:"proxy_url"`
+		ProxyURL *string             `json:"proxy_url"`
+		Traffic  *proxytraffic.Patch `json:"proxy_traffic"`
 	}
 	if err := readJSONBody(r, &p, 4096); err != nil {
 		fail(w, 400, err.Error())
@@ -90,6 +92,18 @@ func (s *Server) handleStorageConnection(w http.ResponseWriter, r *http.Request)
 	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
+	if p.Traffic != nil {
+		if p.ProxyURL != nil {
+			fail(w, 400, "代理地址与流量配置请分别保存")
+			return
+		}
+		if err := s.Svc.SaveProxyTraffic(*p.Traffic); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		s.handleStorage(w, r)
+		return
+	}
 	if err := s.Svc.SaveStorageConnection(r.Context(), p.ProxyURL, nil, nil); err != nil {
 		fail(w, 400, err.Error())
 		return

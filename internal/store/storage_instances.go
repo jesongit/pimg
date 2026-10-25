@@ -21,6 +21,7 @@ import (
 
 	"pimg/internal/dbx"
 	"pimg/internal/ids"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/r2x"
 	"pimg/internal/storage"
 	"pimg/internal/storagehttp"
@@ -324,7 +325,7 @@ func (s *Service) r2Factory(id string, c InstanceConfig) (storage.Cold, storage.
 			}
 			return nil, nil, nil, nil, errors.New("请填写 R2 端点、存储桶和访问凭据")
 		}
-		transport, err := storagehttp.NewTransport(s.storageConnection().ProxyURL)
+		transport, err := storagehttp.NewMeteredTransport(s.storageConnection().ProxyURL, s.proxyTraffic)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -688,6 +689,9 @@ func (s *Service) initialArchive() string {
 	return c
 }
 func (s *Service) recordStorageResult(id string, n int64, start time.Time, err error) {
+	if errors.Is(err, proxytraffic.ErrLimit) {
+		return
+	}
 	// Shutdown, caller cancellation and canceled queue jobs say nothing about
 	// provider availability. Keep the last completed observation intact.
 	if errors.Is(err, context.Canceled) {

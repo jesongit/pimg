@@ -13,6 +13,7 @@ import (
 	"pimg/internal/carrier"
 	"pimg/internal/dbx"
 	"pimg/internal/diagnostics"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/store"
 )
 
@@ -94,6 +95,9 @@ func (e *Engine) Wake() {
 func (e *Engine) workerLoop() {
 	defer e.wg.Done()
 	for {
+		if err := e.svc.RefreshProxyTrafficTasks(); err != nil {
+			e.log.Error("恢复代理流量等待任务失败", "err", err)
+		}
 		if blocked, _ := e.db.IdleBlocksForeground(time.Now().Unix()); blocked {
 			e.svc.InterruptIdle()
 		}
@@ -120,6 +124,8 @@ func (e *Engine) run(t *dbx.Task) {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(e.ctx, 6*time.Hour)
 	defer cancel()
+	ctx, stopTracking := proxytraffic.Track(ctx)
+	defer stopTracking()
 	ctx = store.WithTaskID(ctx, t.ID)
 	ctx = diagnostics.WithTaskID(ctx, t.ID)
 	span := e.db.Performance().Start(ctx, "task", t.Type)
@@ -171,6 +177,12 @@ func (e *Engine) run(t *dbx.Task) {
 		defer finish()
 	}
 	result, err := e.safeRun(ctx, t)
+	if err != nil && (errors.Is(err, proxytraffic.ErrLimit) || errors.Is(context.Cause(ctx), proxytraffic.ErrLimit) || proxytraffic.PauseError(ctx) != nil) {
+		if saveErr := e.svc.PostponeProxyTrafficTask(t.ID); saveErr != nil {
+			e.log.Error("保存代理等待任务失败", "err", saveErr)
+		}
+		return
+	}
 	observedError = err
 	if errors.Is(err, store.ErrLocalImportPending) || errors.Is(err, store.ErrLocalImportWaiting) || errors.Is(err, store.ErrAccountDeleteWaiting) {
 		observedError = nil

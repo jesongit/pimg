@@ -12,21 +12,23 @@ import (
 	"strings"
 	"time"
 
+	"pimg/internal/proxytraffic"
+
 	"github.com/gotd/td/telegram/dcs"
 	"golang.org/x/net/http/httpproxy"
 	"golang.org/x/net/proxy"
 )
 
 // A nil dialer preserves the SDK's default resolver when no proxy is set.
-func clientProxyDial(explicit string) (dcs.DialFunc, error) {
+func clientProxyDial(explicit string, meters ...*proxytraffic.Meter) (dcs.DialFunc, error) {
 	if strings.TrimSpace(explicit) != "" {
-		return proxyDial(explicit)
+		return proxyDial(explicit, meters...)
 	}
 	var direct net.Dialer
-	return environmentProxyDial(httpproxy.FromEnvironment(), direct.DialContext)
+	return environmentProxyDial(httpproxy.FromEnvironment(), direct.DialContext, meters...)
 }
 
-func environmentProxyDial(cfg *httpproxy.Config, direct dcs.DialFunc) (dcs.DialFunc, error) {
+func environmentProxyDial(cfg *httpproxy.Config, direct dcs.DialFunc, meters ...*proxytraffic.Meter) (dcs.DialFunc, error) {
 	// MTProto has no HTTP URL scheme. Prefer the HTTPS proxy for its encrypted
 	// TCP connection, falling back to HTTP_PROXY when HTTPS_PROXY is unset.
 	scheme, raw := "https", cfg.HTTPSProxy
@@ -45,7 +47,7 @@ func environmentProxyDial(cfg *httpproxy.Config, direct dcs.DialFunc) (dcs.DialF
 	if err != nil {
 		return nil, errors.New("Telegram 环境代理地址无效")
 	}
-	dial, err := proxyDial(u.String())
+	dial, err := proxyDial(u.String(), meters...)
 	if err != nil {
 		return nil, err
 	}
@@ -62,13 +64,16 @@ func environmentProxyDial(cfg *httpproxy.Config, direct dcs.DialFunc) (dcs.DialF
 	}, nil
 }
 
-func proxyDial(raw string) (dcs.DialFunc, error) {
+func proxyDial(raw string, meters ...*proxytraffic.Meter) (dcs.DialFunc, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" || u.Path != "" && u.Path != "/" {
 		return nil, errors.New("Telegram 代理地址无效")
 	}
 	scheme := strings.ToLower(u.Scheme)
-	var d net.Dialer
+	d := &meteredDialer{}
+	if len(meters) > 0 {
+		d.meter = meters[0]
+	}
 	switch scheme {
 	case "socks5", "socks5h":
 		var auth *proxy.Auth
@@ -80,7 +85,7 @@ func proxyDial(raw string) (dcs.DialFunc, error) {
 		if port == "" {
 			port = "1080"
 		}
-		dialer, err := proxy.SOCKS5("tcp", net.JoinHostPort(u.Hostname(), port), auth, &d)
+		dialer, err := proxy.SOCKS5("tcp", net.JoinHostPort(u.Hostname(), port), auth, d)
 		if err != nil {
 			return nil, errors.New("Telegram SOCKS5 代理配置无效")
 		}
@@ -101,6 +106,9 @@ func proxyDial(raw string) (dcs.DialFunc, error) {
 		return func(ctx context.Context, network, target string) (net.Conn, error) {
 			conn, err := d.DialContext(ctx, "tcp", address)
 			if err != nil {
+				if errors.Is(err, proxytraffic.ErrLimit) {
+					return nil, err
+				}
 				return nil, errors.New("Telegram 代理连接失败")
 			}
 			rawConn := conn
@@ -150,6 +158,52 @@ func proxyDial(raw string) (dcs.DialFunc, error) {
 	default:
 		return nil, errors.New("Telegram 代理仅支持 http、https 或 socks5")
 	}
+}
+
+type meteredDialer struct {
+	net.Dialer
+	meter *proxytraffic.Meter
+}
+
+func (d *meteredDialer) Dial(network, address string) (net.Conn, error) {
+	return d.DialContext(context.Background(), network, address)
+}
+func (d *meteredDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	if err := proxytraffic.Mark(ctx, d.meter); err != nil {
+		return nil, err
+	}
+	c, err := d.Dialer.DialContext(ctx, network, address)
+	if err == nil {
+		c = d.meter.Wrap(c)
+	}
+	return c, err
+}
+
+// Resolve the environment for the Telegram target, honoring NO_PROXY just as
+// the actual dialer does. Used to fail RPCs promptly while the socket is paused.
+func (c *Client) proxyTrafficError() error {
+	if c.opts.ProxyTraffic == nil {
+		return nil
+	}
+	if strings.TrimSpace(c.opts.ProxyURL) == "" && !c.proxySeen.Load() {
+		return nil
+	}
+	return c.opts.ProxyTraffic.Check()
+}
+
+func (c *Client) ProxyTrafficError() error { return c.proxyTrafficError() }
+
+func proxySelected(explicit, target string) bool {
+	if strings.TrimSpace(explicit) != "" {
+		return true
+	}
+	cfg := httpproxy.FromEnvironment()
+	scheme := "https"
+	if strings.TrimSpace(cfg.HTTPSProxy) == "" {
+		scheme = "http"
+	}
+	u, err := cfg.ProxyFunc()(&url.URL{Scheme: scheme, Host: target})
+	return err == nil && u != nil
 }
 
 type bufferedConn struct {

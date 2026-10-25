@@ -780,11 +780,11 @@ func (s *Service) RunImport(ctx context.Context, fileID string, hdr *carrier.Hea
 	s.DB.SetArchiveState(fileID, "running", "")
 	ct := s.ctPath(fileID)
 	if err := s.uploadCarrierChunks(ctx, f, ct, hdr); err != nil {
-		s.DB.SetArchiveState(fileID, "failed", err.Error())
+		s.setArchiveFailure(ctx, fileID, err)
 		return err
 	}
 	if _, err := s.Verify(ctx, fileID); err != nil {
-		s.DB.SetArchiveState(fileID, "failed", err.Error())
+		s.setArchiveFailure(ctx, fileID, err)
 		return err
 	}
 	if err := s.DB.SetThumbInfo(fileID, f.Kind == "image" || f.Kind == "video", f.ThumbW, f.ThumbH, "image/jpeg", 0, false); err != nil {

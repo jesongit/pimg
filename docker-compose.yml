@@ -1,6 +1,6 @@
 services:
   pimg:
-    image: posase/pimg:v1.0.34
+    image: posase/pimg:v1.0.35
     build: .
     container_name: pimg
     restart: unless-stopped

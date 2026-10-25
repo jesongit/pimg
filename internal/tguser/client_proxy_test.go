@@ -12,11 +12,42 @@ import (
 	"testing"
 	"time"
 
+	"pimg/internal/proxytraffic"
+
 	"github.com/gotd/td/telegram/dcs"
 	"golang.org/x/net/http/httpproxy"
 )
 
 type proxyRequest struct{ method, target string }
+
+func TestTelegramProxyTrafficCountsAndPauses(t *testing.T) {
+	clearProxyEnvironment(t)
+	u, _ := localConnectProxy(t, "tracked", http.StatusOK)
+	m, _ := proxytraffic.New(proxytraffic.DefaultState(), nil)
+	dial, err := clientProxyDial(u, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDialMarker(t, dial, "149.154.167.50:443", "tracked")
+	v := m.View()
+	if v.DailyUsed <= int64(len("tracked")) || v.DailyUsed != v.MonthlyUsed {
+		t.Fatal("CONNECT bytes not counted", v)
+	}
+	used := v.DailyLimit
+	if err := m.Update(proxytraffic.Patch{DailyUsed: &used, DayStart: &v.DayStart}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dial(context.Background(), "tcp", "149.154.167.50:443"); !errors.Is(err, proxytraffic.ErrLimit) {
+		t.Fatal("TG dial bypassed quota", err)
+	}
+	c := New(Options{ProxyURL: u, ProxyTraffic: m})
+	if _, _, err := c.ready(); !errors.Is(err, proxytraffic.ErrLimit) {
+		t.Fatal("ready masked quota as unauthorized", err)
+	}
+	if err := c.safeError(errors.New("private network failure")); !errors.Is(err, proxytraffic.ErrLimit) {
+		t.Fatal("sanitization lost quota signal", err)
+	}
+}
 
 // The proxy returns bytes itself; it never resolves or connects to the target.
 func localConnectProxy(t *testing.T, marker string, status int) (string, <-chan proxyRequest) {

@@ -3,11 +3,15 @@
 package storagehttp
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"pimg/internal/proxytraffic"
 )
 
 // ParseProxyURL validates explicit storage proxy settings. Errors deliberately
@@ -51,4 +55,57 @@ func NewTransport(raw string) (*http.Transport, error) {
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
 	return transport, nil
+}
+
+// MeteredTransport keeps separate pools for proxy and direct requests, so an
+// environment NO_PROXY match can never inherit a metered proxy connection.
+type MeteredTransport struct {
+	proxy, direct *http.Transport
+	meter         *proxytraffic.Meter
+}
+
+func NewMeteredTransport(raw string, meter *proxytraffic.Meter) (*MeteredTransport, error) {
+	t, err := NewTransport(raw)
+	if err != nil {
+		return nil, err
+	}
+	direct := t.Clone()
+	direct.Proxy = nil
+	dial := t.DialContext
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if err := meter.Check(); err != nil {
+			return nil, err
+		}
+		c, err := dial(ctx, network, address)
+		if err == nil {
+			c = meter.Wrap(c)
+		}
+		return c, err
+	}
+	return &MeteredTransport{proxy: t, direct: direct, meter: meter}, nil
+}
+
+func (t *MeteredTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	u, err := t.proxy.Proxy(r)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return t.direct.RoundTrip(r)
+	}
+	if err := proxytraffic.Mark(r.Context(), t.meter); err != nil {
+		return nil, err
+	}
+	response, err := t.proxy.RoundTrip(r)
+	if err != nil {
+		if paused := t.meter.Check(); paused != nil {
+			return nil, paused
+		}
+	}
+	return response, err
+}
+
+func (t *MeteredTransport) CloseIdleConnections() {
+	t.proxy.CloseIdleConnections()
+	t.direct.CloseIdleConnections()
 }

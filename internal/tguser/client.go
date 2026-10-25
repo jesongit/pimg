@@ -5,9 +5,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"pimg/internal/proxytraffic"
 
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/telegram"
@@ -40,6 +44,7 @@ type Client struct {
 	runCancel     context.CancelFunc
 	runContext    context.Context
 	restarting    bool
+	proxySeen     atomic.Bool
 	// The phone and code hash exist only during the interactive login flow.
 	// Neither the code nor the password is retained by Client.
 	authMu   sync.Mutex
@@ -166,12 +171,19 @@ func (c *Client) runConnection(parent context.Context) error {
 		return err
 	}
 	resolver := dcs.DefaultResolver()
-	dial, err := clientProxyDial(c.opts.ProxyURL)
+	dial, err := clientProxyDial(c.opts.ProxyURL, c.opts.ProxyTraffic)
 	if err != nil {
 		c.setState("error", err.Error())
 		return err
 	}
 	if dial != nil {
+		configuredDial := dial
+		dial = func(ctx context.Context, network, target string) (net.Conn, error) {
+			if proxySelected(c.opts.ProxyURL, target) {
+				c.proxySeen.Store(true)
+			}
+			return configuredDial(ctx, network, target)
+		}
 		resolver = dcs.Plain(dcs.PlainOptions{Dial: dial})
 	}
 	mt := telegram.NewClient(c.opts.APIID, c.opts.APIHash, telegram.Options{
@@ -232,6 +244,14 @@ func (c *Client) runConnection(parent context.Context) error {
 // inputs, and cancellation interrupts even a long server-specified delay.
 func (c *Client) middleware(next tg.Invoker) telegram.InvokeFunc {
 	return func(ctx context.Context, in bin.Encoder, out bin.Decoder) error {
+		if err := c.proxyTrafficError(); err != nil {
+			return err
+		}
+		if c.proxySeen.Load() || c.opts.ProxyURL != "" {
+			if err := proxytraffic.Mark(ctx, c.opts.ProxyTraffic); err != nil {
+				return err
+			}
+		}
 		for {
 			started := time.Now()
 			err := next.Invoke(ctx, in, out)
@@ -269,6 +289,11 @@ func (c *Client) middleware(next tg.Invoker) telegram.InvokeFunc {
 }
 
 func (c *Client) safeError(err error) error {
+	if err != nil {
+		if quotaErr := c.proxyTrafficError(); quotaErr != nil {
+			return quotaErr
+		}
+	}
 	var retry *RetryAfterError
 	if errors.As(err, &retry) {
 		return err
@@ -309,6 +334,9 @@ func (c *Client) safeError(err error) error {
 }
 
 func (c *Client) ready() (*tg.Client, int64, error) {
+	if err := c.proxyTrafficError(); err != nil {
+		return nil, 0, err
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.api == nil || !c.connected || c.status.State != "authorized" || c.status.AccountID == 0 {

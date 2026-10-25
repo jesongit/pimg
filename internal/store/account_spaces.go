@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"pimg/internal/dbx"
 	"pimg/internal/ids"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/tguser"
 	"strings"
 	"time"
@@ -31,7 +32,7 @@ func (s *Service) initialArchiveForOwner(owner string) string {
 			continue
 		}
 		if instance.row.Driver == "telegram" && s.UserTG != nil {
-			if s.TGReady() != nil {
+			if readyErr := s.TGReady(); readyErr != nil && !errors.Is(readyErr, proxytraffic.ErrLimit) {
 				continue
 			}
 			space, e := s.DB.TelegramSpace(owner)

@@ -16,6 +16,7 @@ import (
 	"github.com/gofrs/flock"
 
 	"pimg/internal/dbx"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/tguser"
 )
 
@@ -94,6 +95,11 @@ func (r *telegramRuntime) Status() tguser.Status {
 	return st
 }
 func (r *telegramRuntime) authorizedClient() (telegramUserClient, error) {
+	if c, ok := r.current().(interface{ ProxyTrafficError() error }); ok {
+		if err := c.ProxyTrafficError(); err != nil {
+			return nil, err
+		}
+	}
 	st := r.Status()
 	if st.State != "authorized" {
 		if st.Error != "" {
@@ -267,7 +273,7 @@ func (r *telegramRuntime) makeClientLocked() {
 	r.mu.RLock()
 	id, hash := r.apiID, r.apiHash
 	r.mu.RUnlock()
-	options := tguser.Options{APIID: id, APIHash: hash, SessionFile: r.sessionFile(), SessionKey: r.service.Master.Raw(), ProxyURL: r.service.storageConnection().ProxyURL, Logger: r.service.Log, OnMessage: r.onMessage, OnReady: r.service.WakeTelegramSync, OnGap: r.onGap}
+	options := tguser.Options{APIID: id, APIHash: hash, SessionFile: r.sessionFile(), SessionKey: r.service.Master.Raw(), ProxyURL: r.service.storageConnection().ProxyURL, ProxyTraffic: r.service.proxyTraffic, Logger: r.service.Log, OnMessage: r.onMessage, OnReady: r.service.WakeTelegramSync, OnGap: r.onGap}
 	var c telegramUserClient
 	if r.newClient != nil {
 		c = r.newClient(options)
@@ -422,7 +428,24 @@ func (r *telegramRuntime) launchLocked() error {
 				}
 			}
 		}()
-		err := c.Run(ctx)
+		var err error
+		for {
+			err = c.Run(ctx)
+			if ctx.Err() != nil || !errors.Is(err, proxytraffic.ErrLimit) {
+				break
+			}
+			// A quota pause must not require a manual Telegram reconnect.
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
+				if r.service.proxyTraffic.Check() == nil {
+					break
+				}
+			}
+		}
 		if ctx.Err() == nil {
 			message := "Telegram 用户连接已停止，请在设置中重新连接"
 			if err == nil {
@@ -489,6 +512,13 @@ func (s *Service) TGChatID() int64 {
 	return s.Cfg.Telegram.ChatID
 }
 func (s *Service) TGReady() error {
+	if s.telegram != nil {
+		if c, ok := s.telegram.current().(interface{ ProxyTrafficError() error }); ok {
+			if err := c.ProxyTrafficError(); err != nil {
+				return err
+			}
+		}
+	}
 	if s.UserTG == nil {
 		return errors.New("Telegram 用户账号未配置")
 	}

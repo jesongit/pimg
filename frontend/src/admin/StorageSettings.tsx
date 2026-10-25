@@ -4,12 +4,14 @@ import { api } from "../api";
 import { useToast } from "../App";
 import TelegramSettings from "./TelegramSettings";
 import MigrationSettings from "./MigrationSettings";
+import ProxyTrafficSettings from "./ProxyTrafficSettings";
+import type { ProxyTraffic } from "./ProxyTrafficSettings";
 
 type Config = { options?: Record<string, string>; directory?: string; endpoint?: string; bucket?: string; prefix?: string; public_base?: string; topic_id?: number; access_key?: string; secret_key?: string; bootstrap?: boolean; managed?: boolean; cold_directory?: string; temp_public_base?: string; cleanup_bucket?: string; temp_cache_seconds?: number; cdn_zone?: string; cdn_token?: string };
 type Instance = { id: string; name: string; driver: string; enabled: boolean; configured: boolean; config: Config; capabilities: string[]; has_credentials: boolean };
 type Policy = { archives: string[]; permanent: string; temporary: string; normal_mbps: number; accelerated_mbps: number; local_mbps: number; accelerated_start: string; accelerated_end: string; sync_cache_mb: number };
 type Driver = { id: string; name: string; fields: { key: string; label: string; hint?: string; type: string; required: boolean }[] };
-type Response = { data_root?: string; connection: {proxy_url: string; has_proxy: boolean; api_id: number; has_api_hash: boolean}; drivers: Driver[]; instances: Instance[]; policy: Policy; pending_tasks: number; failed_tasks: number; expired_pending_cleanup: number };
+type Response = { data_root?: string; connection: {proxy_url: string; has_proxy: boolean; api_id: number; has_api_hash: boolean; proxy_traffic: ProxyTraffic}; drivers: Driver[]; instances: Instance[]; policy: Policy; pending_tasks: number; failed_tasks: number; expired_pending_cleanup: number };
 const drivers: Record<string, string> = { local: "本地目录", telegram: "Telegram 归档", r2: "Cloudflare R2" };
 function instancePosition(i: Instance) {
   if (i.driver === "r2" && i.config.bucket) return `桶：${i.config.bucket}${i.config.prefix ? ` / ${i.config.prefix}` : ""}`;
@@ -25,6 +27,7 @@ export default function StorageSettings({ onDirtyChange = () => {}, initialCateg
   const [data, setData] = useState<Response | null>(initial||null), [policy, setPolicy] = useState<Policy | null>(initial?.policy||null);
   const [error, setError] = useState(""), [busy, setBusy] = useState(""), [adding, setAdding] = useState(false), [driver, setDriver] = useState("local"), [name, setName] = useState(""), [config, setConfig] = useState<Config>({});
   const [telegramDirty,setTelegramDirty]=useState(false);
+  const [trafficDirty,setTrafficDirty]=useState(false);
   const [editing, setEditing] = useState("");
   const [proxy, setProxy] = useState<string | null>(null);
   const load = useCallback(async (reset = false) => {
@@ -37,7 +40,7 @@ export default function StorageSettings({ onDirtyChange = () => {}, initialCateg
     return () => window.removeEventListener("pimg:policy-updated", refresh);
   }, [load]);
   const dirty = !!policy && !!data && JSON.stringify(policy) !== JSON.stringify(data.policy);
-  useEffect(() => { onDirtyChange(telegramDirty || proxy !== null || dirty || adding && (!!name || Object.values(config).some(Boolean))); }, [telegramDirty, proxy, dirty, adding, name, config, onDirtyChange]);
+  useEffect(() => { onDirtyChange(telegramDirty || trafficDirty || proxy !== null || dirty || adding && (!!name || Object.values(config).some(Boolean))); }, [telegramDirty, trafficDirty, proxy, dirty, adding, name, config, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   const act = async (key: string, work: () => Promise<unknown>, message: string) => {
     if (busy) return; setBusy(key); setError("");
@@ -63,6 +66,7 @@ export default function StorageSettings({ onDirtyChange = () => {}, initialCateg
     <div className="storage-category" hidden={category!=="connection"}><h3>Telegram 归档连接</h3><p className="settings-note">管理员统一登录一次，所有 TG 归档实例共用此连接。每个 Pimg 账号自动分配超级群，相册对应话题。</p><TelegramSettings onDirtyChange={setTelegramDirty} onChanged={() => {void load();window.dispatchEvent(new Event("pimg:policy-updated"))}} /><h3 className="storage-connection-heading">共享网络代理</h3><form className="storage-subform" aria-label="存储网络代理" onSubmit={e => {e.preventDefault();void act("proxy",async()=>{await api.patch("/api/admin/storage/connection",{proxy_url:proxy});setProxy(null);},"存储代理已保存，TG 将重新连接");}}><fieldset className="settings-fields" disabled={!!busy}>
       <Field id="storage-proxy" label="存储网络代理" hint="R2 与 TG 共用，留空表示直连；Docker 可填 http://proxy:7890。含密码的代理不回显，修改后才会覆盖。"><input id="storage-proxy" className="input" type="text" autoComplete="off" placeholder={data.connection.has_proxy && !data.connection.proxy_url ? "已保存含凭据的代理" : ""} value={proxy ?? data.connection.proxy_url} onChange={e=>setProxy(e.target.value)} /></Field>
       </fieldset><div className="settings-actions"><button className="btn btn-crayon" disabled={!!busy || proxy === null}>{busy==="proxy"?"保存中…":"保存代理"}</button></div></form>
+      <ProxyTrafficSettings initial={data.connection.proxy_traffic} active={category === "connection"} onDirtyChange={setTrafficDirty} />
     </div><div className="storage-category" hidden={category!=="instances"}><div className="storage-inventory" aria-label="已配置存储">
       {data.instances.map(i => <div className="storage-instance-row" key={i.id}><div><strong>{i.name}</strong><p>{data.drivers.find(d => d.id === i.driver)?.name || drivers[i.driver] || i.driver} · {instancePosition(i)}</p><small>{i.configured && i.capabilities.length ? i.capabilities.map(c => ({ archive: "归档", permanent: "发布", temporary: "临时" }[c] || c)).join(" / ") : "待配置"}</small></div><div className="storage-row-actions">{<button type="button" className="btn btn-ghost" disabled={!!busy} onClick={() => {setEditing(i.id);setAdding(true);setName(i.name);setDriver(i.driver);setConfig(i.config);}}>修改配置</button>}<button type="button" className="btn btn-ghost" disabled={!!busy || !i.capabilities.length || !i.configured} onClick={() => void act(i.id, () => api.post(`/api/admin/storage/instances/${i.id}/check?role=${i.capabilities.includes("archive") ? "cold" : "hot"}`), `${i.name}连接正常`)}>测试连接</button></div></div>)}
     </div>
