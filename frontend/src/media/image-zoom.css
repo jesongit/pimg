@@ -3,10 +3,3 @@
 .image-zoom-stage.is-image-zoomed .media-gesture-pad{cursor:grab}
 .image-zoom-stage.is-image-dragging,.image-zoom-stage.is-image-dragging .media-gesture-pad{cursor:grabbing}
 .image-zoom-stage.is-image-zoomed .media-edge-nav{top:calc(50% - 28px);bottom:auto;width:48px;height:56px;padding:8px}
-.image-zoom-controls{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:2px;padding:2px 4px;border:1px solid #68727d;border-radius:7px;background:#181a1ee8;color:#f5f6f8;cursor:default}
-.image-zoom-controls>button{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:4px 8px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:12px;white-space:nowrap;cursor:pointer;touch-action:manipulation}
-.image-zoom-controls>button:hover{background:#414954}
-.image-zoom-controls>button:disabled{color:#aab2bd;cursor:default}
-.image-zoom-controls>button:focus-visible{outline:2px solid #b6c9df;outline-offset:-2px}
-.image-zoom-controls>output{min-width:43px;padding-inline:2px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums}
-.image-zoom-controls>.image-zoom-fit{padding-inline:10px}

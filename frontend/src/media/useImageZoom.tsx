@@ -1,6 +1,5 @@
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from "react";
 import type {CSSProperties,PointerEvent as ReactPointerEvent,RefObject} from "react";
-import {IconZoomIn,IconZoomOut} from "@tabler/icons-react";
 import "./image-zoom.css";
 
 type View={scale:number;x:number;y:number};
@@ -90,12 +89,6 @@ export default function useImageZoom(options:Options){
   if(drag.current?.id!==event.pointerId)return;
   stop();event.preventDefault();event.stopPropagation();
  };
- const controls=options.enabled&&options.active?<div className="image-zoom-controls" role="group" aria-label="图片缩放">
-  <button type="button" aria-label="缩小图片" aria-keyshortcuts="Control+-" disabled={view.scale<=minimum} onClick={()=>scaleTo(current.current.scale-.25)}><IconZoomOut size={19} aria-hidden="true"/></button>
-  <output aria-label="图片缩放比例">{Math.round(view.scale*100)}%</output>
-  <button type="button" aria-label="放大图片" aria-keyshortcuts="Control+=" disabled={view.scale>=maximum} onClick={()=>scaleTo(current.current.scale+.25)}><IconZoomIn size={19} aria-hidden="true"/></button>
-  <button type="button" className="image-zoom-fit" aria-label="图片适应窗口" aria-keyshortcuts="Control+0" onClick={reset}>适应窗口</button>
- </div>:null;
- return {scale:view.scale,zoomed:view.scale>1,dragging,constrain,controls,style:{"--image-scale":view.scale,"--image-x":`${view.x}px`,"--image-y":`${view.y}px`} as CSSProperties,
+ return {scale:view.scale,zoomed:view.scale>1,dragging,constrain,reset,zoomIn:()=>scaleTo(current.current.scale+.25),zoomOut:()=>scaleTo(current.current.scale-.25),style:{"--image-scale":view.scale,"--image-x":`${view.x}px`,"--image-y":`${view.y}px`} as CSSProperties,
   bind:{onPointerDownCapture:down,onPointerMoveCapture:move,onPointerUpCapture:end,onPointerCancelCapture:end,onLostPointerCapture:()=>{if(drag.current)stop()},onClickCapture:(event:React.MouseEvent)=>{if(suppressClick.current&&event.detail!==0){suppressClick.current=false;event.preventDefault();event.stopPropagation()}},onDragStartCapture:(event:React.DragEvent)=>{if(options.enabled)event.preventDefault()}}};
 }

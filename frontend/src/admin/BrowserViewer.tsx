@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useContext, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { IconChevronLeft, IconChevronRight, IconX } from "@tabler/icons-react";
 import { fmtSize } from "../api";
@@ -7,12 +7,14 @@ import MediaViewer from "./MediaViewer";
 import { useDialog } from "./interactions";
 import { browserContent, prepareBrowserMedia } from "./browserMedia";
 import type { BrowserEntry } from "./browserMedia";
+import { MediaFullscreenContext } from "../media/useMediaFullscreen";
 
 export default function BrowserViewer({ entry, position, selected, onSelect, onPrev, onNext, onClose, onImport }: {
   entry: BrowserEntry; position: string; selected: boolean; onSelect: () => void;
   onPrev?: () => void; onNext?: () => void; onClose: () => void; onImport: () => void;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const fullscreen=useContext(MediaFullscreenContext);
   useDialog(ref, onClose);
   const file = useMemo<FileItem>(() => ({
     id: entry.path + "@" + entry.version, name: entry.name, orig_name: entry.name,
@@ -39,5 +41,5 @@ export default function BrowserViewer({ entry, position, selected, onSelect, onP
         status={<span className="detail-status-tag browser-source-path" title={entry.path}>源文件只读 · {entry.path}</span>}
         actions={<button type="button" className="btn btn-crayon" disabled={!entry.importable} title={entry.importable ? "复制原件到内部相册" : "此格式未启用导入"} onClick={onImport}>导入到相册</button>} />
       </div></div>
-    </aside></>, document.body);
+    </aside></>, fullscreen?.portal||document.body);
 }

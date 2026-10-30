@@ -19,7 +19,7 @@
 .detail-docked .detail-status-strip [data-storage-role=published]::before{content:"发布 ·"}
 .detail-docked .detail-status-strip [data-storage-role=temporary]::before{content:"临时 ·"}
 .detail-docked .detail-status-strip .storage-label-copy:hover{background:#3b4652;color:#fff;text-decoration:underline;text-underline-offset:3px}
-.detail-docked.detail-workspace .detail-canvas .preview-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:7px;min-height:44px;margin:0;padding:0;background:transparent;border:0}
+.detail-docked.detail-workspace .detail-canvas .preview-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:7px;min-height:44px;margin:0;padding:0;background:transparent;border:0}
 .detail-docked.detail-workspace .preview-actions>.btn,.detail-docked.detail-workspace .preview-actions .detail-publish-actions>.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:var(--control-height);padding:var(--control-py) 12px;font-size:12px;line-height:1.4;white-space:nowrap;border:0;border-radius:7px;background:#2b2f35;color:#e3e7ed;text-decoration:none}
 .detail-docked.detail-workspace .preview-actions .btn:hover,.detail-docked.detail-workspace .preview-actions .btn[aria-expanded=true]{background:#414954;color:#fff}
 .detail-docked.detail-workspace .preview-actions .btn-crayon{background:#52667e;color:#fff}
@@ -76,7 +76,7 @@
  .detail-docked .detail-status-strip{justify-content:flex-start;flex-wrap:nowrap;gap:6px;min-height:26px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
  .detail-docked .detail-status-strip::-webkit-scrollbar{display:none}
  .detail-docked .detail-status-strip>*,.detail-docked .detail-status-strip .storage-labels,.detail-docked .detail-status-strip .storage-link-labels{flex-shrink:0;flex-wrap:nowrap}
- .detail-docked.detail-workspace .detail-canvas .preview-actions{justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;gap:6px;padding:2px 0 4px;scrollbar-width:thin;scrollbar-color:#606872 transparent}
+ .detail-docked.detail-workspace .detail-canvas .preview-actions{justify-content:center;flex-wrap:wrap;gap:6px;padding:2px 0 4px}
  .detail-docked.detail-workspace .preview-actions>.btn,.detail-docked.detail-workspace .preview-actions .detail-publish-actions>.btn{flex-shrink:0;min-height:var(--control-height);padding:var(--control-py) 11px}
  .detail-docked .preview-actions>.preview-original-label{white-space:nowrap;flex-shrink:0}
  .detail-docked .detail-function-panel{width:calc(100% - 20px);max-height:min(53dvh,calc(100dvh - var(--detail-dock-height) - 72px),440px);bottom:calc(var(--detail-dock-height) + 6px);border-radius:10px}

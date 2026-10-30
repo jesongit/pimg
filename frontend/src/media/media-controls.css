@@ -1,0 +1,22 @@
+.media-control-info{height:26px;display:flex;align-items:center;justify-content:center;gap:9px;color:#c1c7ce;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.media-control-info>span{font-size:11px}
+.media-control-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;width:min(100%,480px);margin:0 auto 10px}
+.media-control-button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:44px;padding:5px 3px;border:0;border-radius:7px;background:#2b2f35;color:#e3e7ed;font:inherit;font-size:12px;line-height:1.4;white-space:nowrap;cursor:pointer;touch-action:manipulation}
+.media-control-button svg{width:18px;height:18px;flex-shrink:0}
+.media-control-button.is-primary{background:#52667e;color:#fff}
+.media-control-button:hover{background:#414954}
+.media-control-button:disabled{opacity:.55;cursor:default}
+.media-control-button:focus-visible{outline:2px solid #b6c9df;outline-offset:2px}
+.media-progress-edge{position:absolute;bottom:0;left:0;right:0;height:20px;z-index:4;display:flex;align-items:flex-end}
+.media-progress-edge::before{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(to right,#b6c9df var(--media-progress,0%),#414954 var(--media-progress,0%));pointer-events:none}
+.media-progress-edge input{position:relative;appearance:none;-webkit-appearance:none;width:100%;height:20px;margin:0;padding:0;background:transparent;cursor:pointer;touch-action:pan-y;accent-color:#b6c9df}
+.media-progress-edge input::-webkit-slider-runnable-track{height:3px;background:transparent;border:0}
+.media-progress-edge input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:10px;height:10px;border:0;border-radius:50%;margin-top:-3.5px;background:#b6c9df;opacity:0}
+.media-progress-edge input::-moz-range-track{height:3px;background:transparent;border:0}
+.media-progress-edge input::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:#b6c9df;opacity:0}
+.media-progress-edge:hover::before,.media-progress-edge:focus-within::before{height:4px}
+.media-progress-edge:focus-within{outline:2px solid #b6c9df;outline-offset:-2px}
+.media-progress-edge input:focus{outline:none}
+.media-progress-edge input:disabled{cursor:default}
+@media(max-width:420px){.media-control-buttons{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(pointer:coarse){.media-progress-edge,.media-progress-edge input{height:44px}}
