@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api";
@@ -44,8 +45,8 @@ export default function TwoFactor() {
     <div className="two-factor-heading"><h2 id="two-factor-title">两步验证（2FA）</h2><span>{status ? status.enabled ? "已开启" : "未开启" : "正在读取…"}</span></div>
     <p>登录时，在密码之外验证动态码。支持 Google Authenticator、Microsoft Authenticator 等验证器应用。</p>
     {status?.enabled && !codes.length && <p>剩余 {status.recovery_remaining} 个恢复码。无法使用验证器时，可用恢复码登录。</p>}
-    {notice && <p role="status" className="two-factor-notice">{notice}</p>}
-    {error && <p className="two-factor-error" role="alert">{error}</p>}
+    {notice && <FloatingFeedback role="status" className="two-factor-notice">{notice}</FloatingFeedback>}
+    {error && <FloatingFeedback className="two-factor-error" role="alert">{error}</FloatingFeedback>}
     {!status && <button className="btn" onClick={() => { setError(""); void load().catch(e => setError(e.message)); }}>重新读取</button>}
     {!!codes.length && <div className="two-factor-recovery">
       <h3>保存一次性恢复码</h3><p>恢复码只显示这一次。请保存在验证器以外的安全位置；每次使用仍需输入账号密码。</p>

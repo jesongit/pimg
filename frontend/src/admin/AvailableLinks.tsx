@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fmtTime, storageName } from "../api";
 import type { AvailableLink, FileItem, TempView } from "../api";
@@ -126,9 +127,9 @@ function useAvailableLinks(file: FileItem, onChanged?: () => void) {
 
 function Notices({ error, warnings, generationError, onRetry }: { error: string; warnings: string[]; generationError: string; onRetry: () => void }) {
   return <>
-    {error && <div className="available-links-warning" role="alert"><p>{error}</p><button type="button" className="btn btn-sm" onClick={onRetry}>重试获取</button></div>}
-    {!!warnings.length && <div className="available-links-warning" role="status">{warnings.map((warning, index) => <p key={index}>{warning}</p>)}</div>}
-    {generationError && <p className="available-links-warning" role="alert">{generationError}</p>}
+    {error && <FloatingFeedback className="available-links-warning" role="alert"><p>{error}</p><button type="button" className="btn btn-sm" onClick={onRetry}>重试获取</button></FloatingFeedback>}
+    {!!warnings.length && <FloatingFeedback className="available-links-warning" role="status">{warnings.map((warning, index) => <p key={index}>{warning}</p>)}</FloatingFeedback>}
+    {generationError && <FloatingFeedback className="available-links-warning" role="alert">{generationError}</FloatingFeedback>}
   </>;
 }
 

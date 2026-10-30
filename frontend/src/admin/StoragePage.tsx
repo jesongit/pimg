@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, fmtSize, fmtTime } from "../api";
@@ -40,7 +41,7 @@ export default function StoragePage() {
   return <div className="storage-page users-page">
     <div className="users-heading"><div><h1>存储</h1><p>归档可多选并自动同步，发布和临时各选一个首选；故障时自动降级。</p></div><button className="btn btn-crayon" onClick={() => setEditor({ id: "", name: "", driver: "local", enabled: true, config: defaults("local") })}>添加存储</button></div>
     <nav className="storage-page-tabs" aria-label="存储管理分类">{[["list", "存储列表"], ["policy", "用途与同步"], ["connection", "连接管理"], ["migration", "整站迁移"]].map(([id, name]) => <button key={id} className={`btn${tab === id ? " btn-crayon" : " btn-ghost"}`} aria-current={tab === id ? "page" : undefined} onClick={() => {if(id!==tab&&(!settingsDirty||confirm("放弃尚未保存的存储设置？"))){setSettingsDirty(false);setTab(id);}}}>{name}</button>)}</nav>
-    {error && <div className="users-error" role="alert">{error}</div>}
+    {error && <FloatingFeedback className="users-error" role="alert">{error}</FloatingFeedback>}
     {tab === "list" ? <>
       <div className="users-toolbar"><label className="users-search"><span className="sr-only">搜索存储</span><input className="input" type="search" placeholder="搜索名称或存储方式" value={query} onChange={event => setQuery(event.target.value)} /></label><span className="users-count">{shown.length} 个存储</span><button className="btn" disabled={!!busy} onClick={() => void action("probe", () => api.post("/api/admin/storage/probe", {}), "已安排检测，仅更新可用状态和延迟")}>检测可用性</button><button className="btn btn-ghost" disabled={!!busy} onClick={() => void load()}>刷新状态</button></div>
       <div className="users-registry storage-registry"><table className="users-table" aria-label="存储列表"><colgroup><col className="storage-col-name"/><col className="storage-col-priority"/><col className="storage-col-health"/><col className="storage-col-roles"/><col className="storage-col-mode"/><col className="storage-col-actions"/></colgroup><thead><tr><th scope="col">存储</th><th scope="col">优先级</th><th scope="col">状态与速度</th><th scope="col">用途</th><th scope="col">归档方式</th><th scope="col" className="storage-actions-heading">操作</th></tr></thead><tbody>{shown.map(instance => {

@@ -4,7 +4,7 @@ import "./image-zoom.css";
 
 type View={scale:number;x:number;y:number};
 type Options={mediaKey:string;enabled:boolean;active:boolean;stage:RefObject<HTMLDivElement>};
-type Drag={id:number;x:number;y:number;origin:View};
+type Drag={id:number;x:number;y:number;origin:View;active:boolean};
 const minimum=.25,maximum=8,initial:View={scale:1,x:0,y:0};
 const clamp=(value:number,min:number,max:number)=>Math.min(max,Math.max(min,value));
 const editing=(target:EventTarget|null)=>target instanceof Element&&!!target.closest('input,select,textarea,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"]');
@@ -77,17 +77,17 @@ export default function useImageZoom(options:Options){
   suppressClick.current=false;
   if(!event.isPrimary){stop();return}
   if(!available()||current.current.scale<=1||event.button!==0||event.target instanceof Element&&event.target.closest('button,a,input,select,textarea'))return;
-  drag.current={id:event.pointerId,x:event.clientX,y:event.clientY,origin:current.current};
-  event.currentTarget.setPointerCapture(event.pointerId);setDragging(true);event.preventDefault();event.stopPropagation();
+  drag.current={id:event.pointerId,x:event.clientX,y:event.clientY,origin:current.current,active:false};
  };
  const move=(event:ReactPointerEvent<HTMLDivElement>)=>{
   const previous=drag.current;if(!previous||previous.id!==event.pointerId)return;
+  if(!previous.active){if(Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<8)return;previous.active=true;event.currentTarget.setPointerCapture(event.pointerId);setDragging(true)}
   commit({...previous.origin,x:previous.origin.x+event.clientX-previous.x,y:previous.origin.y+event.clientY-previous.y});
   suppressClick.current=true;event.preventDefault();event.stopPropagation();
  };
  const end=(event:ReactPointerEvent<HTMLDivElement>)=>{
   if(drag.current?.id!==event.pointerId)return;
-  stop();event.preventDefault();event.stopPropagation();
+  const moved=drag.current.active;stop();if(moved){event.preventDefault();event.stopPropagation()}
  };
  return {scale:view.scale,zoomed:view.scale>1,dragging,constrain,reset,zoomIn:()=>scaleTo(current.current.scale+.25),zoomOut:()=>scaleTo(current.current.scale-.25),style:{"--image-scale":view.scale,"--image-x":`${view.x}px`,"--image-y":`${view.y}px`} as CSSProperties,
   bind:{onPointerDownCapture:down,onPointerMoveCapture:move,onPointerUpCapture:end,onPointerCancelCapture:end,onLostPointerCapture:()=>{if(drag.current)stop()},onClickCapture:(event:React.MouseEvent)=>{if(suppressClick.current&&event.detail!==0){suppressClick.current=false;event.preventDefault();event.stopPropagation()}},onDragStartCapture:(event:React.DragEvent)=>{if(options.enabled)event.preventDefault()}}};

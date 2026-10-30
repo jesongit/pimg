@@ -5,8 +5,9 @@ import type { FileItem, OriginalView } from "../api";
 import useMediaInteractions from "../media/useMediaInteractions";
 import useImageZoom from "../media/useImageZoom";
 import MediaLoading from "../media/MediaLoading";
-import { copyOriginalImage, originalPNG } from "../media/copyOriginalImage";
-import ManualImageCopy from "../media/ManualImageCopy";
+import { copyOriginalImage } from "../media/copyOriginalImage";
+import { useToast } from "../App";
+import FloatingFeedback from "../FloatingFeedback";
 import { MediaPlaybackContext } from "../media/MediaPlaybackContext";
 import "../media/media-controls.css";
 
@@ -51,15 +52,15 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   sourceAdapter?: MediaSourceAdapter;
 }) {
   const { api } = useGallery();
+  const toast = useToast();
   const sound = useContext(MediaPlaybackContext);
   const [localMuted,setLocalMuted]=useState(true);
   const muted=sound?.muted??localMuted,setMuted=sound?.setMuted??setLocalMuted;
   const [position,setPosition]=useState(0),[duration,setDuration]=useState(0),[rate,setRate]=useState(1);
   const [copying, setCopying] = useState(false);
-  const [copyNotice,setCopyNotice]=useState<{kind:"pending"|"success"|"error"|"manual";message:string}|null>(null);
-  const [manualCopy,setManualCopy]=useState<Blob|null>(null);
+  const [copied,setCopied]=useState(false);
   const copyController = useRef<AbortController>();
-  useEffect(() => { setCopying(false);setCopyNotice(null);setManualCopy(null); return () => { copyController.current?.abort(); copyController.current = undefined; }; }, [file.id]);
+  useEffect(() => { setCopying(false);setCopied(false); return () => { copyController.current?.abort(); copyController.current = undefined; }; }, [file.id]);
   const video = file.kind === "video", enabled = file.archive_state === "done" && !blocked;
   const autoLoad = !!sourceAdapter?.autoLoad;
   const [requested, setRequested] = useState(autoLoad || !video && !!file.local_ready), [attempt, setAttempt] = useState(0);
@@ -76,19 +77,18 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   const loading = ["preparing", "loading", "decoding"].includes(stage);
   const copyImage = async () => {
     if (copyController.current || video || !enabled) return;
-    const manual = !window.isSecureContext || !navigator.clipboard?.write || typeof ClipboardItem === "undefined";
-    const controller = new AbortController(); copyController.current = controller; setCopying(true);setCopyNotice({kind:"pending",message:manual?"正在准备完整原图…":"正在读取原图并写入剪贴板…"});
+    if (!window.isSecureContext || !navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      const reason = window.isSecureContext ? "当前浏览器不支持一键复制。" : "HTTP 地址不支持一键复制，使用 HTTPS 可一键复制。";
+      toast(reason + (visible ? "可在原图上右键或长按复制。" : loading ? "原图加载后，可直接右键或长按复制。" : "请先点「原图」，加载后右键或长按复制。"),"err");
+      return;
+    }
+    const controller = new AbortController(); copyController.current = controller; setCopying(true);setCopied(false);
     try {
       const url = sourceAdapter?.download || api.url(`/files/${encodeURIComponent(file.id)}/download`);
-      if (manual) {
-        const image = await originalPNG(url, file.ext, file.size, controller.signal);
-        if (!controller.signal.aborted) { setManualCopy(image); setCopyNotice({kind:"manual",message:"浏览器限制自动复制图片，请右键完整原图选择“复制图片”。"}); }
-      } else {
-        await copyOriginalImage(url, file.ext, file.size, controller.signal);
-        if (!controller.signal.aborted) setCopyNotice({kind:"success",message:"原图已复制，可在 QQ、微信中粘贴"});
-      }
+      await copyOriginalImage(url, file.ext, file.size, controller.signal);
+      if (!controller.signal.aborted) { setCopied(true);toast("原图已复制，可在 QQ、微信中粘贴"); }
     } catch (failure) {
-      if (!controller.signal.aborted) setCopyNotice({kind:"error",message:failure instanceof Error ? failure.message : "图片复制失败，请重试。"});
+      if (!controller.signal.aborted) toast(failure instanceof Error ? failure.message : "图片复制失败，请重试。", "err");
     } finally {
       const canceled = controller.signal.aborted;
       controller.abort();
@@ -202,7 +202,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     {name:"缩小图片",label:"缩小",icon:<IconZoomOut/>,action:zoom.zoomOut,disabled:!canZoom||zoom.scale<=.25},
     {name:"放大图片",label:"放大",icon:<IconZoomIn/>,action:zoom.zoomIn,disabled:!canZoom||zoom.scale>=8},
     {name:"图片适应窗口",label:"适应",icon:<IconViewportWide/>,action:zoom.reset,disabled:!canZoom},
-    {name:"复制原图",label:copying?"复制中":copyNotice?.kind==="success"?"已复制":"复制",icon:<IconCopy/>,action:()=>void copyImage(),disabled:!enabled||copying},
+    {name:"复制原图",label:copying?"复制中":copied?"已复制":"复制",icon:<IconCopy/>,action:()=>void copyImage(),disabled:!enabled||copying},
   ];
   controls.push({name:interactions.fullscreenActive?"退出全屏":"全屏查看",label:interactions.fullscreenActive?"退出":"全屏",icon:interactions.fullscreenActive?<IconArrowsMinimize/>:<IconArrowsMaximize/>,action:interactions.toggleFullscreen,disabled:!enabled});
   return <>
@@ -215,7 +215,6 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
         <input type="range" aria-label="视频进度" aria-valuetext={`${mediaTime(position)} / ${mediaTime(duration||file.duration)}`} min="0" max={duration||1} step="0.1" value={Math.min(position,duration||1)} disabled={!videoReady||!duration||!interactionActive} onChange={event=>interactions.seek(0,Number(event.target.value))}/>
       </div>}
       {loading && <MediaLoading label={phase} percent={stage === "preparing" && preparationPhase !== "queued" || stage === "loading" && !video ? percent : undefined}/>}
-      {interactions.expanded&&stage==="error"&&<div className="media-fullscreen-action"><p role="alert">{error}</p><button type="button" className="btn" onClick={requestPlay}>重试查看{label}</button></div>}
     </div>
     <div ref={dock} className="detail-action-dock">
       {status && <div className="detail-status-strip" aria-label="媒体状态">{status}</div>}
@@ -232,10 +231,8 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
           {parts.length > 1 ? <><label className="sr-only" htmlFor={`media-part-${file.id}`}>视频片段</label><select id={`media-part-${file.id}`} className="select" value={partIndex} onChange={event => choosePart(Number(event.target.value))}>{parts.map(part => <option key={part.index} value={part.index}>第 {part.index + 1} / {part.count} 段</option>)}</select><a className="btn" href={api.url(`/files/${encodeURIComponent(file.id)}/download?part=${partIndex}`)} download>下载当前无损片段</a></> : <a className="btn" href={sourceAdapter?.download || api.url(`/files/${encodeURIComponent(file.id)}/download`)} download>下载原件</a>}
         </>}
       </div>
-      {copyNotice&&<p className={`media-copy-feedback is-${copyNotice.kind}`} role={copyNotice.kind==="error"?"alert":"status"}>{copyNotice.message}</p>}
-      {error && <p className="detail-error media-load-error" role="alert">{error}</p>}
-      {notice}
     </div>
-    {manualCopy&&<ManualImageCopy image={manualCopy} onClose={()=>{setManualCopy(null);dock.current?.querySelector<HTMLButtonElement>('[aria-label="复制原图"]')?.focus({preventScroll:true});}}/>}
+    {error && <FloatingFeedback role="alert">{error}<button type="button" className="btn" onClick={requestPlay}>重试查看{label}</button></FloatingFeedback>}
+    {notice}
   </>;
 }

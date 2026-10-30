@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api } from "../api";
@@ -59,7 +60,7 @@ export default function StorageSettings({ onDirtyChange = () => {}, initialCateg
   return <div className={compact ? "storage-compact" : undefined}>
     <nav hidden={compact} className="settings-subnav" aria-label="存储设置分类">{[["instances","存储实例"],["policy","用途与同步"],["connection","连接管理"],["migration","整站迁移"]].map(([id,label])=><button type="button" key={id} aria-pressed={category===id} onClick={()=>setCategory(id)}>{label}{id==="policy"&&dirty?" · 未保存":""}</button>)}</nav>
     {category === "migration" && <MigrationSettings />}
-    {error && <p className="settings-note" role="alert">{error}</p>}
+    {error && <FloatingFeedback className="settings-note" role="alert">{error}</FloatingFeedback>}
     {category === "instances" && data.data_root && <p className="settings-note" style={{overflowWrap:"anywhere"}}>本机数据目录：{data.data_root}。数据库、密钥、TG 会话及默认本地存储集中保存在此目录。</p>}
     {category === "instances" && <div className="storage-connection-summary"><span>TG 归档按账号自动分配，登录和代理统一管理。</span><button className="btn btn-sm" onClick={()=>setCategory("connection")}>管理连接</button></div>}
     <p className="settings-note" hidden={category!=="instances"}>每个 R2 实例连接一个桶；默认将永久存储和临时存储分开，分别用于固定外链与到期清理。</p>

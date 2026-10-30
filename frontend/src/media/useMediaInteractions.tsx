@@ -4,6 +4,7 @@ import {IconArrowsMaximize,IconArrowsMinimize,IconChevronLeft,IconChevronRight,I
 import {createPlaybackAcceleration} from "./playbackAcceleration";
 import useMediaFullscreen from "./useMediaFullscreen";
 import "./media-interactions.css";
+import FloatingFeedback from "../FloatingFeedback";
 
 type Options={
   mediaKey:string;video:boolean;enabled:boolean;active?:boolean;source?:string;
@@ -152,11 +153,11 @@ export default function useMediaInteractions(options:Options){
   const overlay=<div className={`media-interactions${active?"":" is-inactive"}`}>
     <button type="button" className="media-edge-nav media-edge-prev" aria-label="上一张" disabled={!options.onPrev||!active} onClick={options.onPrev}><IconChevronLeft size={28} aria-hidden="true"/></button>
     <div ref={pad} className="media-gesture-pad" tabIndex={active?0:-1} role="group" aria-label={options.video?"视频手势区域":"图片浏览区域"} aria-keyshortcuts="PageUp PageDown Space ArrowLeft ArrowRight ArrowUp ArrowDown F"
-      onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event=>pointerEnd(event)} onPointerCancel={event=>pointerEnd(event,true)} onLostPointerCapture={event=>{if(gesture.current?.id===event.pointerId){cancelClick.current=true;stop(false)}}} onContextMenu={event=>event.preventDefault()} onClick={event=>{if(cancelClick.current)event.preventDefault()}} />
+      style={options.video?undefined:{pointerEvents:"none"}} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event=>pointerEnd(event)} onPointerCancel={event=>pointerEnd(event,true)} onLostPointerCapture={event=>{if(gesture.current?.id===event.pointerId){cancelClick.current=true;stop(false)}}} onContextMenu={event=>{if(options.video)event.preventDefault()}} onClick={event=>{if(cancelClick.current)event.preventDefault()}} />
     <button type="button" className="media-edge-nav media-edge-next" aria-label="下一张" disabled={!options.onNext||!active} onClick={options.onNext}><IconChevronRight size={28} aria-hidden="true"/></button>
     {(!options.toolbar||fullscreen.active)&&active&&(options.video||options.fullscreenImages)&&(options.source||fullscreen.active)&&options.enabled&&<button type="button" className="media-fullscreen-toggle" aria-label={fullscreen.active?"退出全屏":options.video?"全屏播放":"全屏查看"} aria-keyshortcuts="F" onClick={toggleFullscreen}>{fullscreen.active?<IconArrowsMinimize size={20} aria-hidden="true"/>:<IconArrowsMaximize size={20} aria-hidden="true"/>}</button>}
     {!options.toolbar&&active&&options.enabled&&options.video&&options.source&&!playing&&<button type="button" className="media-center-play" aria-label="播放视频" onClick={toggle}><IconPlayerPlay size={28} aria-hidden="true"/></button>}
-    {!!feedback&&active&&<output className="media-gesture-feedback" aria-live="polite">{feedback}</output>}
+    {!!feedback&&active&&<FloatingFeedback role="status" persistent>{feedback}</FloatingFeedback>}
   </div>;
   return {brightness:1,playing,overlay,announce,toggle,seek,stop,toggleFullscreen,fullscreenActive:fullscreen.active,expanded:fullscreen.expanded};
 }

@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useEffect, useRef, useState } from "react";
 import { api, fmtTime } from "../api";
 import type { TokenItem } from "../api";
@@ -27,7 +28,7 @@ export default function Tokens() {
   return <div className="token-page">
     <h1 className="sr-only">API 令牌</h1>
     <div className="token-page-toolbar"><span>{loading ? "正在读取令牌…" : `${tokens.length} 个令牌`}</span><button className="btn btn-crayon" onClick={() => setCreating(true)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>创建令牌</button></div>
-    {loadError && <div className="token-load-error" role="alert"><span>{loadError}</span><button className="btn btn-sm" onClick={() => void load()}>重试</button></div>}
+    {loadError && <FloatingFeedback className="token-load-error" role="alert"><span>{loadError}</span><button className="btn btn-sm" onClick={() => void load()}>重试</button></FloatingFeedback>}
     <section className="token-registry" aria-label="令牌列表">
       {!loading && !loadError && tokens.length === 0 ? <div className="empty"><p>还没有令牌</p><span>需要连接上传工具时，创建一个访问令牌。</span><button className="btn" onClick={() => setCreating(true)}>创建令牌</button></div> : tokens.length > 0 && <div className="panel" style={{ overflow: "auto" }}>
         <table className="sheet-table responsive-table">

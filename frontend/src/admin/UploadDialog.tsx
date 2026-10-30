@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconFile, IconUpload } from "@tabler/icons-react";
@@ -97,7 +98,7 @@ export default function UploadDialog({ albums, initialFiles, onClose, onUpload }
           })}</ul> : <p className="detail-hint upload-dialog-empty">选择文件后，可在这里检查并移除；点击“开始上传”才会提交。</p>}
         </div>
         {admin && <div className="upload-dialog-target"><label htmlFor={ownerID}>所属用户</label><select id={ownerID} className="select" disabled={!targetsReady} value={owner} onChange={event => { setOwner(event.target.value); setAlbum(null); }}><option value={actor.owner_id}>自己（{actor.username}）</option>{owners.filter(value => value.id !== actor.owner_id).map(value => <option key={value.id} value={value.id}>{value.username}</option>)}</select></div>}
-        {targetsError && <p className="detail-error" role="alert">{targetsError}<button type="button" className="btn btn-ghost" onClick={() => void loadTargets()}>重新读取相册</button></p>}
+        {targetsError && <FloatingFeedback className="detail-error" role="alert">{targetsError}<button type="button" className="btn btn-ghost" onClick={() => void loadTargets()}>重新读取相册</button></FloatingFeedback>}
         <div className="upload-dialog-target"><label htmlFor={albumID}>目标相册</label><select id={albumID} className="select" required disabled={!targetsReady} value={album !== null && hasAlbum ? album : ""} onChange={event => setAlbum(event.target.value === "" ? null : Number(event.target.value))}><option value="" disabled>{targetsReady ? "请选择相册（必选）" : "正在读取相册…"}</option>{owner === actor.owner_id && <option value={0}>未分类</option>}{targets.filter(value => (!admin || value.owner_id === owner) && !(owner === actor.owner_id && value.is_unclassified)).map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</select></div>
         <div className="upload-dialog-options"><label htmlFor={encryptionID}><input id={encryptionID} type="checkbox" checked={encrypted} onChange={event => setEncrypted(event.target.checked)} />加密归档</label><p className="detail-hint">{admin ? "文件归所选用户所有，上传后保持私有。" : "上传后仅自己可见。"}加密仅应用于允许加密的归档存储。</p></div>
       </div>

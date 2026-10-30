@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import {useEffect,useRef,useState} from "react";
 import type {FormEvent} from "react";
 import {api} from "../api";
@@ -53,7 +54,7 @@ function ScheduleEditor({schedule,onSave,onClose}:{schedule:SystemSchedule;onSav
    <p id={`schedule-help-${schedule.id}`} className="schedule-help">五个字段依次为分、时、日、月、周。时区使用 IANA 名称，如 Asia/Shanghai（北京时间）或 UTC。</p>
    <div className="schedule-examples"><span>常用规则</span>{examples.map(example=><button key={example.cron} type="button" className="text-button" onClick={()=>update({cron:example.cron})} title={example.cron}>{example.label}</button>)}</div>
    <p className="schedule-help">保存后会显示下一次执行时间，不会立即运行。停用或改规则不会中断当前运行。</p>
-   {error&&<p className="schedule-error" role="alert">{error}</p>}
+   {error&&<FloatingFeedback className="schedule-error" role="alert">{error}</FloatingFeedback>}
    <div className="schedule-editor-actions"><button className="btn btn-sm" type="submit" disabled={!dirty}>{saving?"保存中…":"保存计划"}</button><button className="btn btn-sm btn-ghost" type="button" onClick={onClose}>取消编辑</button></div>
   </fieldset>
  </form>;
@@ -73,8 +74,8 @@ export default function SystemSchedules(){
  const close=(id:string)=>{setEditing(null);requestAnimationFrame(()=>section.current?.querySelector<HTMLButtonElement>(`[data-schedule-id="${id}"] .schedule-edit`)?.focus({preventScroll:true}))};
  return <section className="system-schedules" ref={section} aria-labelledby="system-schedules-title" aria-busy={loading}>
   <div className="schedules-heading"><div><h2 id="system-schedules-title">系统定时任务</h2><p>每种维护计划只保留一条，按各自的规则自动运行。</p></div><button className="btn btn-sm btn-ghost" aria-label="刷新系统定时任务" disabled={loading} onClick={()=>setRevision(value=>value+1)}>刷新</button></div>
-  {feedback&&<p className="schedule-feedback" role="status">{feedback}</p>}
-  {error&&<div className="schedule-load-error" role="alert"><p>{error}{items.length>0?"；以下为上次读取的计划。":""}</p><button className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重试读取计划</button></div>}
+  {feedback&&<FloatingFeedback className="schedule-feedback" role="status">{feedback}</FloatingFeedback>}
+  {error&&<FloatingFeedback className="schedule-load-error" role="alert"><p>{error}{items.length>0?"；以下为上次读取的计划。":""}</p><button className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重试读取计划</button></FloatingFeedback>}
   {loading&&!items.length?<p className="schedule-empty" role="status">正在读取系统计划…</p>:!error&&!items.length?<p className="schedule-empty">暂无系统定时任务。</p>:<ul className="schedule-list">{items.map(schedule=><li key={schedule.id} data-schedule-id={schedule.id}>
    <div className="schedule-row"><div className="schedule-name"><h3>{schedule.name}</h3><p>{schedule.description}</p></div>
     <div className="schedule-rule"><span>{ruleText(schedule)} <span className="schedule-zone">{zoneName(schedule.timezone)}</span></span><small>{!schedule.enabled?schedule.state==="running"?"当前运行完成后停止":"已停用":schedule.next_run?<>下次 <time dateTime={new Date(schedule.next_run*1000).toISOString()}>{timeText(schedule.next_run,schedule.timezone)}</time></>:"等待安排下次执行"}</small></div>

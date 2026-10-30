@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {Link} from "react-router-dom";
@@ -87,7 +88,7 @@ export default function LocalImport({ albums, onClose, paths, directoryImport=fa
     <div className="dhead"><h2 id="local-import-title">{paths ? "导入到相册" : "服务器导入"}</h2><button type="button" className="btn btn-ghost" disabled={busy} onClick={close}>关闭</button></div>
     <div className="local-import-body">
       <p className="detail-hint">保留源文件，导入后归目标相册的用户所有，默认不公开。</p>
-      {error && <p className="detail-error" role="alert">{error}</p>}
+      {error && <FloatingFeedback className="detail-error" role="alert">{error}</FloatingFeedback>}
       {!id ? <>
         {!paths && <><form className="local-import-path" onSubmit={event => { event.preventDefault(); if (pathDraft.trim()) void browse(pathDraft.trim()); }}><label htmlFor="import-path">导入路径</label><input id="import-path" className="input" placeholder="输入文件或目录路径" value={pathDraft} onChange={event => setPathDraft(event.target.value)} autoComplete="off" spellCheck={false} /><button type="submit" className="btn" disabled={loading || !pathDraft.trim()}>打开</button></form>
         <div className="local-import-browser"><div className="local-import-browser-head">{isDirectory ? <label className="local-import-check"><input type="checkbox" aria-label="选择整个当前目录" disabled={!directory || loading} checked={selected.has(directory)} onChange={() => choose(directory)} />整个目录</label> : <span>已选择文件</span>}<button type="button" className="btn btn-sm btn-ghost" disabled={loading || !parent || parent === directory} onClick={() => void browse(parent)}>上一级</button></div>
@@ -97,12 +98,12 @@ export default function LocalImport({ albums, onClose, paths, directoryImport=fa
           {!!next && <button type="button" className="btn" disabled={loading} onClick={() => void browse(directory, next)}>加载更多</button>}
         </div></div></>}
         <div className="local-import-target"><label htmlFor="import-album">目标相册</label><select id="import-album" className="select" required disabled={!targetsReady} value={album !== null && hasAlbum ? album : ""} onChange={event => setAlbum(event.target.value === "" ? null : Number(event.target.value))}><option value="" disabled>{targetsReady?"请选择用户的相册（必选）":"正在读取相册…"}</option><option value={0}>自己 / 未分类</option>{owners.map(owner=><optgroup key={owner.id} label={owner.username}>{targetAlbums.filter(value=>value.owner_id===owner.id&&!(owner.id==="admin:1"&&value.is_unclassified)).map(value=><option key={value.id} value={value.id}>{owner.username} / {value.name}</option>)}</optgroup>)}</select></div>
-        {targetsError&&<p className="detail-error" role="alert">{targetsError}<button type="button" className="btn btn-ghost" onClick={()=>void loadTargets()}>重新读取相册</button></p>}
+        {targetsError&&<FloatingFeedback className="detail-error" role="alert">{targetsError}<button type="button" className="btn btn-ghost" onClick={()=>void loadTargets()}>重新读取相册</button></FloatingFeedback>}
         <div className="local-import-options" role="group" aria-label="导入选项"><label className="local-import-check"><input type="checkbox" checked={encrypted} onChange={event => setEncrypted(event.target.checked)} />加密归档</label>{(!paths || directoryImport) && <label className="local-import-check"><input type="checkbox" checked={recursive} onChange={event => setRecursive(event.target.checked)} />包含子目录</label>}<label className="local-import-check"><input type="checkbox" checked={schedule === "idle"} onChange={event => setSchedule(event.target.checked ? "idle" : "now")} />空闲处理</label></div>
         {!!selected.size && <details className="local-import-disclosure"><summary>查看已选 {selected.size} 项</summary><ul className="local-import-selection">{[...selected].map(p => <li key={p}><span>{browserPathLabel(p)}</span><button type="button" className="btn btn-ghost" onClick={() => choose(p)}>移除</button></li>)}</ul><button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>清空选择</button></details>}
       </> : !batch ? <p role="status">正在读取批次…</p> : <>
         <div className="local-import-summary"><strong>{names[batch.state] || batch.state}</strong><span>{batch.album_id ? targetAlbums.find(value => value.id === batch.album_id)?.name || "相册已删除" : "未分类"} · {batch.encrypted ? "加密" : "未加密"} · 私有</span><span>{count} 个源文件 · {fmtSize(batch.bytes)}{batch.state !== "ready" ? ` · 已处理 ${processed} 项` : ""}</span></div>
-        {batch.error && <p className="detail-error" role="alert">{batch.error}</p>}
+        {batch.error && <FloatingFeedback className="detail-error" role="alert">{batch.error}</FloatingFeedback>}
         <p className="detail-hint">{batch.state === "ready" ? `${batch.counts.pending || 0} 项待导入${outcome ? ` · ${outcome}` : ""}` : outcome || "正在准备…"}</p>
         {batch.task_id&&<Link className="text-button" to={`/admin/logs?group_id=${batch.task_id}`}>查看本次操作记录 #{batch.task_id}</Link>}
         {["running", "paused"].includes(batch.state) && <p className="detail-hint">{batch.state === "paused" ? "已暂停接收新文件，当前已接收文件会继续归档。" : batch.schedule === "idle" ? "等待空闲时处理；上传、浏览原件等操作优先。" : "正在按顺序处理，关闭页面后仍会继续。"}</p>}

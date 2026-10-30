@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useContext, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
@@ -36,7 +37,7 @@ export default function Home(){
  useEffect(()=>{if(!sentinel.current)return;const observer=new IntersectionObserver(entries=>{if(entries[0].isIntersecting&&!feed.loading&&!feed.error&&feed.items.length<feed.total)void feed.loadMore()},{rootMargin:"400px"});observer.observe(sentinel.current);return()=>observer.disconnect()},[feed.items.length,feed.total,feed.loading,feed.error,feed.loadMore]);
  const photo=(item:HomeItem,index:number)=><figure className="exhibit-frame" key={item.id}><PublicCover item={item} eager={index<4} onOpen={()=>open(item.id)}/><figcaption><span title={item.name}>{item.name}</span><time>{fmtDate(item.media_at||item.created_at)}</time></figcaption></figure>;
  return <div className="exhibition"><header className="public-header-shell"><div className="public-header page-width"><Link className="public-brand" to="/">{site?.logo_url&&<img src={site.logo_url} alt="" onError={e=>{e.currentTarget.hidden=true}}/>}{displaySiteName(site?.site_name)}</Link></div></header>
- <main className="public-main page-width" aria-label="公开作品展示"><h1 className="sr-only">{displaySiteName(site?.site_name)} 公开作品</h1>{feed.error&&<div className="public-feedback" role="alert"><p>{feed.error}</p><button className="btn" disabled={feed.loading} onClick={()=>void feed.refresh()}>重新加载作品</button></div>}
+ <main className="public-main page-width" aria-label="公开作品展示"><h1 className="sr-only">{displaySiteName(site?.site_name)} 公开作品</h1>{feed.error&&<FloatingFeedback className="public-feedback" role="alert"><p>{feed.error}</p><button className="btn" disabled={feed.loading} onClick={()=>void feed.refresh()}>重新加载作品</button></FloatingFeedback>}
  {!!feed.items.length&&<><div className="exhibit-intro">{site?.site_desc&&<p><Link to="/admin" title="进入管理后台" aria-label={`${site.site_desc}，进入管理后台`}>{site.site_desc}</Link></p>}<span>{feed.total} 件公开作品</span></div><section className="exhibit-sequence" aria-label="公开作品">{feed.items.map(photo)}</section></>}
  {!feed.items.length&&!feed.error&&<div className="public-empty"><p>{feed.loading?"正在读取作品…":"这里还没有公开作品"}</p>{!feed.loading&&<span>管理员公开文件或相册后，会在这里显示缩略图。</span>}</div>}<div ref={sentinel} className="exhibit-load" aria-live="polite">{feed.items.length<feed.total&&<button className="btn btn-ghost" disabled={feed.loading} onClick={()=>void feed.loadMore()}>{feed.loading?"正在读取更多作品…":"继续浏览"}</button>}</div></main>
  <SiteFooter site={site} />
@@ -75,6 +76,6 @@ function PublicMediaAttempt({item,active,onPrev,onNext,revision,onRetry}:PublicM
   <img className={`public-viewer-original media-visual${ready?" is-ready":""}`} src={source} alt={item.name} decoding="async" onLoad={event=>void loaded(event.currentTarget)} onError={()=>setFailed(true)}/>
 
   {interactions.overlay}
-  {failed?<div className="public-media-status" role="alert"><span>{mediaName}暂时无法加载</span><button type="button" className="viewer-action" onClick={onRetry}>重试{mediaName}</button></div>:!ready&&<MediaLoading label={`加载${mediaName}`}/>}
+  {failed?<FloatingFeedback className="public-media-status" role="alert"><span>{mediaName}暂时无法加载</span><button type="button" className="viewer-action" onClick={onRetry}>重试{mediaName}</button></FloatingFeedback>:!ready&&<MediaLoading label={`加载${mediaName}`}/>}
  </div>;
 }

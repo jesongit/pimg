@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useContext, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, displaySiteName } from "../api";
@@ -41,7 +42,7 @@ export default function Login() {
               <div className="field"><label htmlFor="login-code">{recovery ? "一次性恢复码" : "6 位动态码"}</label><input key={String(recovery)} ref={codeInput} id="login-code" className="input" autoComplete="one-time-code" inputMode={recovery ? "text" : "numeric"} maxLength={recovery ? 32 : 6} pattern={recovery ? undefined : "[0-9]{6}"} required value={code} onChange={e => setCode(e.target.value)} aria-describedby="login-code-hint" /><small id="login-code-hint">{recovery ? "使用后，该恢复码立即失效。" : "请确保手机时间准确；已用动态码需要等下一组。"}</small></div>
               <button type="button" className="signin-factor-link" onClick={() => { setRecovery(!recovery); setCode(""); setErr(""); }}>{recovery ? "使用验证器动态码" : "无法使用验证器？使用恢复码"}</button>
             </>}
-            {err && <p className="signin-error" role="alert">{err}</p>}
+            {err && <FloatingFeedback className="signin-error" role="alert">{err}</FloatingFeedback>}
             <button className="btn btn-crayon signin-submit" disabled={!username || !password || secondStep && !code.trim()}>{busy ? "正在验证…" : secondStep ? "验证并登录" : "登录"}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6" /></svg></button>
             {secondStep && <button type="button" className="signin-factor-link" onClick={back}>返回账号登录</button>}
           </fieldset>

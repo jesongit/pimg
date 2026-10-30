@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
@@ -66,7 +67,7 @@ export default function TelegramScan({ album, onChanged, initialOpen = false }: 
         {associated && <p className="detail-hint" role="status">{pending && album.telegram?.state !== "missing" ? "话题任务正在处理，完成后会更新。" : "已有话题关联已保留，请在任务页查看状态和失败原因。"}<Link to="/admin/tasks">查看任务</Link></p>}
         {choosing && !bound && <div className="telegram-topic-binding"><label>已有话题<select className="select" aria-label="已有话题" value={topicID} onChange={event => setTopicID(event.target.value)} disabled={!!busy}><option value="">请选择话题</option>{topics.filter(topic => !topic.closed && topic.id > 1).map(topic => <option key={topic.id} value={topic.id}>{topic.name} · {topic.id}</option>)}</select></label>{!topics.some(topic => !topic.closed && topic.id > 1) && <p className="detail-hint">没有可关联的开放话题，请在 TG 中检查话题状态后重试。</p>}<ConfirmButton type="button" className="btn" disabled={!topicID || !!busy} confirmLabel="确认关联" busyLabel="提交中…" resetKey={`${album.id}:${topicID}`} description={`将关联「${topics.find(topic => String(topic.id) === topicID)?.name || "所选话题"}」。关联后固定使用此话题，扫描其中的文件会归入当前相册。`} onConfirm={bind}>关联此话题</ConfirmButton></div>}
       </>}
-      {error && <p className="detail-error" role="alert">{error}</p>}{feedback && <p className="telegram-scan-feedback" role="status">{feedback}</p>}
+      {error && <FloatingFeedback className="detail-error" role="alert">{error}</FloatingFeedback>}{feedback && <FloatingFeedback className="telegram-scan-feedback" role="status">{feedback}</FloatingFeedback>}
     </div>
   </details>;
 }

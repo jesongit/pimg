@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { FormEvent, InputHTMLAttributes, ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -153,8 +154,8 @@ export default function Settings({ username }: { username: string }) {
     } finally { setSaving(null); }
   };
   const actions = (group: Group) => <div className={`settings-actions${dirty(group) ? " is-dirty" : ""}${feedback[group] ? " has-feedback" : ""}`}>
-    <div className={`settings-feedback${feedback[group] ? ` is-${feedback[group]!.kind}` : ""}`} role={feedback[group]?.kind === "err" ? "alert" : "status"}>
-      {feedback[group]?.text || (dirty(group) ? "有未保存的更改" : "修改后单独保存此分区")}
+    <div className="settings-feedback" role="status">
+      {dirty(group) ? "有未保存的更改" : "修改后单独保存此分区"}
     </div>
     <div className="settings-action-buttons">
       {dirty(group) && <button type="button" className="btn btn-ghost" disabled={!!saving} onClick={() => reset(group)}>还原更改</button>}
@@ -174,7 +175,7 @@ export default function Settings({ username }: { username: string }) {
     <nav className="settings-index" aria-label="设置分区">{categories.map(([id, label]) => <button type="button" key={id} aria-current={active === id ? "page" : undefined} onClick={event => { switchSection(id); event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>{settingsIcon(sectionIcons[id])}<span>{label}</span>{sectionDirty(id) && <i className="settings-unsaved-dot" aria-label="有未保存的更改" />}</button>)}{!!changed && <p role="status">{changed} 个分类尚未保存</p>}</nav>
     <div className="settings-content"><ActiveSection.Provider value={active}>
     {loading ? <div className="settings-loading" role="status" aria-label="正在读取设置"><div /><div /><div /><span>正在读取设置…</span></div>
-      : loadError ? <div className="settings-load-error" role="alert"><h2>暂时无法读取设置</h2><p>{loadError}</p><button className="btn" onClick={load}>重新加载</button></div>
+      : loadError ? <FloatingFeedback className="settings-load-error" role="alert"><h2>暂时无法读取设置</h2><p>{loadError}</p><button className="btn" onClick={load}>重新加载</button></FloatingFeedback>
       : draft && <>
       <Section id="site" title="站点信息" description="设置网站访问地址、名称、简介和标识。">
         <form onSubmit={(event) => save("site", event)} aria-label="站点标识设置">
@@ -256,7 +257,7 @@ export default function Settings({ username }: { username: string }) {
             </Field>
           </fieldset>
           <p className="settings-note">关闭并保存后，自动删除全部详细性能采集数据。普通运行日志、任务历史、文件和配置会保留。</p>
-          {debugError&&<p className="settings-feedback is-err" role="alert">{debugError}<button type="button" className="btn btn-ghost" disabled={!!saving} onClick={async()=>{if(!saved)return;setSaving("debug");try{const response=await api.patch<AdminSettings>("/api/admin/settings",{debug_enabled:saved.debug_enabled==="true"});setDebugError(response.debug_state?.error||"");}catch(cause:any){setDebugError(cause.message)}finally{setSaving(null)}}}>重新应用</button></p>}
+          {debugError&&<FloatingFeedback className="settings-feedback is-err" role="alert">{debugError}<button type="button" className="btn btn-ghost" disabled={!!saving} onClick={async()=>{if(!saved)return;setSaving("debug");try{const response=await api.patch<AdminSettings>("/api/admin/settings",{debug_enabled:saved.debug_enabled==="true"});setDebugError(response.debug_state?.error||"");}catch(cause:any){setDebugError(cause.message)}finally{setSaving(null)}}}>重新应用</button></FloatingFeedback>}
           {actions("debug")}
         </form>
       </Section>
@@ -267,7 +268,7 @@ export default function Settings({ username }: { username: string }) {
       <Section id="tokens" title="访问令牌" description="管理上传器与 API 使用的访问凭据。">{active === "tokens" && <Tokens />}</Section>
       <Section id="system" title="系统状态" description="检查存储连接与媒体处理能力，查看当前存档概况。">
         <div className="settings-system-head"><span className="settings-hint">{status ? `当前版本 v${status.version}` : "服务连接检查"}</span><button className="btn btn-ghost" onClick={refreshStatus} disabled={statusLoading}>{statusLoading ? "检查中…" : "刷新状态"}</button></div>
-        {statusError && <p className="settings-feedback is-err" role="alert">{statusError}{status && "以下为上次检查结果。"}</p>}
+        {statusError && <FloatingFeedback className="settings-feedback is-err" role="alert">{statusError}{status && "以下为上次检查结果。"}</FloatingFeedback>}
         <div className="settings-services" aria-busy={statusLoading}>
           {[...(status?.storage_checks || []).map(item => [`${item.purpose} · ${item.name || storageName(item.instance_id)}`, "当前所选实例的连接检查", item.status === "ok" ? "ok" : "err"]), ...(!status ? [["存储连接", "正在检查各归档、永久发布与临时存储", "unknown"]] : []), ["ffmpeg", "视频封面生成", status ? status.ffmpeg ? "ok" : "warn" : "unknown"]].map(([name, description, state]) => <div className="settings-service" key={name}>
             <div><strong>{name}</strong><span>{description}</span></div><span className={`settings-service-state is-${state}`}><i aria-hidden="true" />{state === "unknown" ? statusError ? "未能检查" : "检查中" : name === "ffmpeg" ? state === "ok" ? "可用" : "未安装" : state === "ok" ? "连接正常" : "连接异常"}</span>

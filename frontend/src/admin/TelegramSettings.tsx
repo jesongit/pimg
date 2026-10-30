@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
@@ -56,8 +57,8 @@ export default function TelegramSettings({ onDirtyChange, onChanged }: { onDirty
   const currentAuthError = authError || (authStep ? status?.error : "");
   return <div className="telegram-settings" aria-label="Telegram 账号设置">
     <div className="telegram-status-line"><span className={`chip ${status?.state === "authorized" ? "chip-ok" : status?.state === "error" || status?.state === "reauth_required" ? "chip-warn" : ""}`} role="status">{status ? names[status.state] : loadError ? "TG 状态读取失败" : "正在读取 TG 状态…"}</span>{status?.name && <span>{status.name}</span>}<button type="button" className="btn btn-ghost" onClick={() => void load()} disabled={!!busy}>刷新 TG 状态</button></div>
-    {(loadError || error || !authStep && status?.error) && <p className="settings-feedback is-err" role="alert">{error || loadError || status?.error}</p>}
-    {feedback && <p className="settings-feedback is-ok" role="status">{feedback}</p>}
+    {(loadError || error || !authStep && status?.error) && <FloatingFeedback className="settings-feedback is-err" role="alert">{error || loadError || status?.error}</FloatingFeedback>}
+    {feedback && <FloatingFeedback className="settings-feedback is-ok" role="status">{feedback}</FloatingFeedback>}
     <details className="telegram-credentials" open={status?.configured === false}><summary>应用凭据</summary><form className="storage-subform" aria-label="Telegram 应用凭据" onSubmit={e=>{e.preventDefault();void action("config",{api_id:apiID,api_hash:apiHash},"应用凭据已保存，正在重新连接；已有登录会话保留。");}}><fieldset className="settings-fields" disabled={!!busy}>
       <div className="settings-field"><label htmlFor="tg-api-id">API ID</label><div className="settings-field-control"><input id="tg-api-id" className="input" type="number" min={1} required value={apiID||""} onChange={e=>setApiID(Number(e.target.value))} /></div></div>
       <div className="settings-field"><label htmlFor="tg-api-hash">API Hash</label><div className="settings-field-control"><input id="tg-api-hash" className="input" type="password" autoComplete="new-password" required={!status?.configured} value={apiHash} onChange={e=>setApiHash(e.target.value)} /></div><p className="settings-hint">保存后不回显；留空保留原值。已有账号、归档群和登录状态保留。</p></div>
@@ -68,7 +69,7 @@ export default function TelegramSettings({ onDirtyChange, onChanged }: { onDirty
         <div className="telegram-auth-fields">
         {status.state === "code" ? <label>登录验证码<input className="input" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value)} aria-describedby={currentAuthError ? "tg-auth-error" : undefined} /></label> : status.state === "password" ? <label>两步验证密码<input className="input" name="telegram-password" type={showPassword ? "text" : "password"} autoComplete="off" required value={password} onChange={event => setPassword(event.target.value)} aria-describedby={currentAuthError ? "tg-password-hint tg-auth-error" : "tg-password-hint"} /></label> : <label>手机号（含国家区号）<input className="input" type="tel" autoComplete="tel" placeholder="+86…" required value={phone} onChange={event => setPhone(event.target.value)} aria-describedby={currentAuthError ? "tg-auth-error" : undefined} /></label>}
         {status.state === "password" && <p className="settings-hint" id="tg-password-hint">{status.password_hint ? `密码提示：${status.password_hint}` : "请输入你在 Telegram 设置的两步验证密码。"}</p>}
-        {currentAuthError && <p className="settings-feedback is-err" id="tg-auth-error" role="alert">{currentAuthError}</p>}
+        {currentAuthError && <FloatingFeedback className="settings-feedback is-err" id="tg-auth-error" role="alert">{currentAuthError}</FloatingFeedback>}
         </div><div className="telegram-auth-actions">
         {status.state === "password" && <button type="button" className="btn btn-ghost" disabled={!!busy} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? "隐藏密码" : "显示密码"}</button>}
         <button className="btn btn-crayon" disabled={!!busy}>{busy.startsWith("auth/") ? status.state === "password" ? "正在验证密码…" : status.state === "code" ? "正在核对验证码…" : "正在发送验证码…" : status.state === "code" ? "提交验证码" : status.state === "password" ? "验证并登录" : "发送登录验证码"}</button>

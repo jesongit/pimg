@@ -1,4 +1,4 @@
-.image-zoom-stage>.media-visual{transform:translate(var(--image-x,0px),var(--image-y,0px)) scale(var(--image-scale,1));transform-origin:center;user-select:none;-webkit-user-drag:none}
+.image-zoom-stage>.media-visual{transform:translate(var(--image-x,0px),var(--image-y,0px)) scale(var(--image-scale,1));transform-origin:center;user-select:auto;-webkit-user-select:auto;-webkit-touch-callout:default;-webkit-user-drag:none;pointer-events:auto}
 .image-zoom-stage.is-image-zoomed{touch-action:none;cursor:grab}
 .image-zoom-stage.is-image-zoomed .media-gesture-pad{cursor:grab}
 .image-zoom-stage.is-image-dragging,.image-zoom-stage.is-image-dragging .media-gesture-pad{cursor:grabbing}

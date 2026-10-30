@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useToast } from "../App";
@@ -69,7 +70,7 @@ export default function ProxyTrafficSettings({ initial, active, onDirtyChange }:
     <h3 className="storage-connection-heading">代理流量限制</h3>
     <p className="settings-note">R2 与 TG 共用额度，累计实际经过代理的上传与下载。1 GB = 10 亿字节；直连与本地复制不计入。</p>
     <p className="settings-note" role="status">本日 {amount(value.daily_used_bytes)} / {amount(value.daily_limit_bytes)}，下次刷新 {time(value.daily_resets_at)}<br />本月 {amount(value.monthly_used_bytes)} / {amount(value.monthly_limit_bytes)}，下次刷新 {time(value.monthly_resets_at)}</p>
-    {value.blocked && <p className="settings-feedback is-err" role="status">{value.error || `代理流量已达上限，相关任务等待至 ${time(value.resume_at!)} 后自动继续。提高额度或校准已用量也可恢复。`}</p>}
+    {value.blocked && <FloatingFeedback className="settings-feedback is-err" role="status">{value.error || `代理流量已达上限，相关任务等待至 ${time(value.resume_at!)} 后自动继续。提高额度或校准已用量也可恢复。`}</FloatingFeedback>}
     <fieldset className="settings-fields" disabled={busy}>
       <div className="settings-field"><label htmlFor="proxy-daily-limit">日流量上限（GB）</label><div className="settings-field-control"><input id="proxy-daily-limit" className="input" type="number" min="0.000000001" max="1000000" step="any" required value={field("daily_limit_bytes", String(value.daily_limit_bytes / GB))} onChange={e => set("daily_limit_bytes", e.target.value)} /></div></div>
       <div className="settings-field"><label htmlFor="proxy-monthly-limit">月流量上限（GB）</label><div className="settings-field-control"><input id="proxy-monthly-limit" className="input" type="number" min="0.000000001" max="1000000" step="any" required value={field("monthly_limit_bytes", String(value.monthly_limit_bytes / GB))} onChange={e => set("monthly_limit_bytes", e.target.value)} /></div></div>
@@ -80,7 +81,7 @@ export default function ProxyTrafficSettings({ initial, active, onDirtyChange }:
       <div className="settings-field"><label htmlFor="proxy-daily-used">本日已用（GB）</label><div className="settings-field-control"><input id="proxy-daily-used" className="input" type="number" min="0" max="1000000" step="any" required value={correction.daily} onChange={e => setCorrection({ ...correction, daily: e.target.value, dailyChanged: true })} /></div></div>
       <div className="settings-field"><label htmlFor="proxy-monthly-used">本月已用（GB）</label><div className="settings-field-control"><input id="proxy-monthly-used" className="input" type="number" min="0" max="1000000" step="any" required value={correction.monthly} onChange={e => setCorrection({ ...correction, monthly: e.target.value, monthlyChanged: true })} /></div></div>
     </fieldset> : <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setCorrection({ daily: String(value.daily_used_bytes / GB), monthly: String(value.monthly_used_bytes / GB), day_start: value.day_start, month_start: value.month_start })}>校准已用流量</button>}
-    {error && <p className="settings-feedback is-err" role="alert">{error}</p>}
+    {error && <FloatingFeedback className="settings-feedback is-err" role="alert">{error}</FloatingFeedback>}
     <div className={`settings-actions ${dirty ? "is-dirty" : "has-feedback"}`}><p className="settings-feedback" role="status">{dirty ? "有未保存的更改" : "达到任一上限暂停，额度恢复后自动继续"}</p><div className="settings-action-buttons">{dirty && <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => { setDraft({}); setCorrection(null); setError(""); }}>还原更改</button>}<button className="btn btn-crayon" disabled={busy || !dirty}>{busy ? "保存中…" : "保存流量配置"}</button></div></div>
   </form>;
 }

@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { IconArrowDown, IconArrowUp, IconChevronRight, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconStar, IconStarFilled, IconX } from "@tabler/icons-react";
@@ -179,10 +180,10 @@ export default function FileBrowser() {
       </div>
     </div>
     <div className="file-browser-content" aria-busy={loading}>
-      {data?.indexed && <p className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</p>}
-      {!!data?.scan_limited && <p className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</p>}
-      {error ? <div className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></div> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.index_building ? "索引正在建立，文件会陆续显示…" : data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
-        {!!data?.skipped_directories && <p className="file-browser-warning" role="status">有 {data.skipped_directories} 个子文件夹无法读取，已展示其余可读取的文件。</p>}
+      {data?.indexed && <FloatingFeedback className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</FloatingFeedback>}
+      {!!data?.scan_limited && <FloatingFeedback className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</FloatingFeedback>}
+      {error ? <FloatingFeedback className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></FloatingFeedback> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.index_building ? "索引正在建立，文件会陆续显示…" : data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
+        {!!data?.skipped_directories && <FloatingFeedback className="file-browser-warning" role="status">有 {data.skipped_directories} 个子文件夹无法读取，已展示其余可读取的文件。</FloatingFeedback>}
         <div ref={root} className={`file-browser-list${drag.active ? " is-drag-selecting" : ""}`} {...drag.bind}>
           <table className="browser-table" aria-label={recursive ? "所有图片和视频" : "文件列表"}>
             <colgroup><col className="browser-check-column" />{columns.map(column => <col key={column.asc} className={column.className} />)}</colgroup>

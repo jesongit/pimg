@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api } from "../api";
@@ -42,12 +43,13 @@ export default function AdminCredentials({ username, setup = false, onDirtyChang
         {field("confirm-password", "确认新密码", <input id="confirm-password" className="input" type={show ? "text" : "password"} value={pw.confirm} onChange={event => update("confirm", event.target.value)} autoComplete="new-password" required={setup || !!pw.neu} aria-invalid={!!pw.confirm && pw.confirm !== pw.neu} aria-describedby="confirm-password-hint" />, pw.confirm && pw.confirm !== pw.neu ? "两次输入的新密码不一致。" : "再次输入新密码。")}
       </div>
       {!setup && factor !== false && field("credential-code", "动态码或恢复码", <input id="credential-code" className="input" autoComplete="one-time-code" value={code} maxLength={32} required={factor === true} onChange={e=>setCode(e.target.value)} />, factor === true ? "使用未使用的验证码；刚登录后请等待下一组动态码。" : "已开启两步验证时请填写，否则留空。")}
-      {factorError && <p className="settings-feedback is-err" role="alert">两步验证状态读取失败。<button type="button" className="btn btn-ghost" onClick={()=>window.dispatchEvent(new Event("pimg:two-factor-updated"))}>重新读取验证状态</button></p>}
+      {factorError && <FloatingFeedback className="settings-feedback is-err" role="alert">两步验证状态读取失败。<button type="button" className="btn btn-ghost" onClick={()=>window.dispatchEvent(new Event("pimg:two-factor-updated"))}>重新读取验证状态</button></FloatingFeedback>}
       {!setup && <p className="settings-note">修改密码后，其他登录会话和管理员令牌将失效，当前网页保持登录。</p>}
     </fieldset>
     <div className="settings-actions">
-      <div className={`settings-feedback${feedback ? ` is-${feedback.kind}` : ""}`} role={feedback?.kind === "err" ? "alert" : "status"}>
-        <button type="button" className="settings-password-toggle" aria-pressed={show} onClick={() => setShow(!show)}>{show ? "隐藏密码" : "显示密码"}</button>{feedback && <span>{feedback.text}</span>}
+      {feedback?.kind === "err" && <FloatingFeedback role="alert">{feedback.text}</FloatingFeedback>}
+      <div className="settings-feedback">
+      <button type="button" className="settings-password-toggle" aria-pressed={show} onClick={() => setShow(!show)}>{show ? "隐藏密码" : "显示密码"}</button>
       </div>
       <button className="btn btn-crayon" disabled={busy || !valid}>{busy ? "保存中…" : setup ? "保存并进入后台" : "保存账号设置"}</button>
     </div>

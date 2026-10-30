@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import {useEffect,useState} from "react";
 import type {ReactNode} from "react";
 import {api} from "../api";
@@ -21,7 +22,7 @@ function LegacySteps({id,active,refresh}:{id:number;active:boolean;refresh:numbe
  },[id,page,active,refresh,revision]);
  const ordered=[...items].sort((a,b)=>Number(b.state==="failed")-Number(a.state==="failed")||a.id-b.id);
  return <div className="task-steps" aria-label="任务步骤" aria-busy={busy}>
-  {error&&<p role="alert">{error}<button type="button" className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重新读取</button></p>}
+  {error&&<FloatingFeedback role="alert">{error}<button type="button" className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重新读取</button></FloatingFeedback>}
   {busy&&!items.length&&<p role="status">正在读取处理明细…</p>}
   <ul>{ordered.map(item=>{
     const action=typeNames[item.type]||item.type,name=item.file_name?.trim(),hasName=!!name&&name!==action,file=taskHasFile(item),details:ReactNode[]=[];

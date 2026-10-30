@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useGallery } from "./GalleryScope";
@@ -111,7 +112,7 @@ export function TimeIndex({ groups, grouping, current, loading, error, onRetry, 
   }
   const value = groups[Math.min(active, max)];
   return <aside className={`time-index${isDragging ? " scrubbing" : hovered !== null ? " hovering" : ""}`} onPointerLeave={() => setHovered(null)} aria-label={`按上传日期浏览 · 按${unit}`}>
-    {loading ? <span className="time-index-message" role="status">读取日期…</span> : error ? <div className="time-index-message" role="alert"><span>{groups.length ? "日期更新失败" : "日期读取失败"}</span><button className="btn btn-sm" onClick={onRetry}>重试</button></div> : !groups.length ? <span className="time-index-message">暂无日期</span> : null}
+    {loading ? <span className="time-index-message" role="status">读取日期…</span> : error ? <FloatingFeedback className="time-index-message" role="alert"><span>{groups.length ? "日期更新失败" : "日期读取失败"}</span><button className="btn btn-sm" onClick={onRetry}>重试</button></FloatingFeedback> : !groups.length ? <span className="time-index-message">暂无日期</span> : null}
     <div ref={track} className={`time-track${isDragging ? " is-dragging" : ""}`} role="slider" tabIndex={unavailable ? -1 : 0} aria-label={`拖动时间线跳转${unit}分区`} aria-orientation="vertical" aria-valuemin={0} aria-valuemax={max} aria-valuenow={Math.min(active, max)} aria-valuetext={value ? `${groupLabel(value, grouping, true)}，${value.count}项` : "暂无日期"} aria-disabled={unavailable}
       onPointerDown={event => { if (unavailable || event.button !== 0 || dragging.current !== null) return; event.preventDefault(); track.current?.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId); dragging.current = event.pointerId; lastJump.current = ""; setDragging(true);const target=at(event.clientY);jump(target.index,true,target.endpoint); }}
       onPointerMove={event => { const target = at(event.clientY); setHovered(target.index); if (dragging.current === event.pointerId) jump(target.index,false,target.endpoint); }}

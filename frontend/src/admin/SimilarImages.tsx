@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import {useEffect,useId,useRef,useState} from "react";
 import {createPortal} from "react-dom";
 import type {Album,FileItem} from "../api";
@@ -92,7 +93,7 @@ export default function SimilarImages({query,albums,onClose}:{query:string;album
      {scanning&&<button className="btn" onClick={()=>{run.current?.abort();setNotice("扫描已停止，当前筛选结果尚未检查完整。")}}>停止扫描</button>}
      <span role="status" aria-live="polite">{started?`${scanning?"扫描中":"已扫描"} ${progress.done} / ${progress.total} ${unit} · ${candidateCount} 组候选${progress.skipped?` · 跳过 ${progress.skipped} 项（未就绪、大小未知或预览不可用）`:""}`:"点击开始后扫描当前筛选的全部结果"}</span>
     </div>
-    {error&&<p className="detail-error" role="alert">{error}</p>}{notice&&<p className="detail-hint" role="status">{notice}</p>}
+    {error&&<FloatingFeedback className="detail-error" role="alert">{error}</FloatingFeedback>}{notice&&<FloatingFeedback className="detail-hint" role="status">{notice}</FloatingFeedback>}
     {pair?<>
      <nav className="similar-navigation" aria-label={`${heading}对比`}>
       <button className="btn" disabled={busy||position===0} onClick={()=>setPosition(value=>value-1)}>上一组</button>

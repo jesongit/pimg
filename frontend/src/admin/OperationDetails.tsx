@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import {useEffect,useRef,useState} from "react";
 import ConfirmButton from "./ConfirmButton";
 import {createPortal} from "react-dom";
@@ -63,17 +64,17 @@ export default function OperationDetails({id,actions=true,refresh=0,onNavigate}:
  const canRetry=operation&&(operation.can_retry??group?.can_retry??["failed","canceled"].includes(operation.state));
  const canCancel=operation&&(operation.can_cancel??group?.can_cancel??(["pending","running"].includes(operation.state)&&!operation.cancel_requested));
  return <section className="operation-details" aria-label={`操作 ${id} 的处理结果`} aria-busy={busy}>
-  {error&&<p className="detail-error" role="alert">{error}<button type="button" className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重新读取</button></p>}
+  {error&&<FloatingFeedback className="detail-error" role="alert">{error}<button type="button" className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重新读取</button></FloatingFeedback>}
   {!operation&&!error&&<p role="status">正在读取操作…</p>}
   {operation&&<>
    <div className="operation-heading"><strong>{logMessage({...operation,record:'task'})}</strong><span className={`chip ${operation.state==="failed"?"chip-err":operation.state==="done"?"chip-ok":"chip-warn"}`}>{taskState(operation)}</span><small>操作 #{operation.id}</small></div>
    {taskSummary(operation)&&<p className="operation-summary">{taskSummary(operation)}</p>}
    {["pending","running"].includes(operation.state)&&totalFiles>0&&!["scanning","ready","paused"].includes(group?.stage||"")&&<div className="task-group-progress"><span>{processed} / {totalFiles} 项</span><progress aria-label="操作处理进度" max={totalFiles} value={processed}/></div>}
    {operation.last_error&&<p className="detail-error">{operation.last_error}</p>}
-   {actionNotice&&<p className="detail-hint" role="status">{actionNotice}</p>}{actionError&&<p className="detail-error" role="alert">{actionError}</p>}
+   {actionNotice&&<FloatingFeedback className="detail-hint" role="status">{actionNotice}</FloatingFeedback>}{actionError&&<FloatingFeedback className="detail-error" role="alert">{actionError}</FloatingFeedback>}
    {actions&&<div className="operation-actions">{canRetry&&<button type="button" className="btn btn-sm" disabled={acting} onClick={()=>void act("retry")}>{acting?"提交中…":operation.state==="canceled"?"继续剩余项":"仅重试失败项"}</button>}{canCancel&&<ConfirmButton className="btn btn-sm btn-ghost" disabled={acting} confirmLabel="确认取消" resetKey={id} description={taskCancelMessage(operation)} onConfirm={()=>act("cancel")}>取消剩余操作</ConfirmButton>}<button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={()=>setRevision(value=>value+1)}>刷新</button></div>}
    <div className="operation-item-controls" role="group" aria-label="文件明细范围"><button type="button" className={`btn btn-sm ${filter==="failed"?"":"btn-ghost"}`} aria-pressed={filter==="failed"} onClick={()=>{setFilter("failed");setPage(1)}}>失败项{group?.failed_files?`（${group.failed_files}）`:""}</button><button type="button" className={`btn btn-sm ${filter==="all"?"":"btn-ghost"}`} aria-pressed={filter==="all"} onClick={()=>{setFilter("all");setPage(1)}}>全部文件</button><small>{total} 项</small></div>
-   {itemError&&<p className="detail-error" role="alert">{itemError}<button type="button" className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重试读取明细</button></p>}
+   {itemError&&<FloatingFeedback className="detail-error" role="alert">{itemError}<button type="button" className="btn btn-sm" onClick={()=>setRevision(value=>value+1)}>重试读取明细</button></FloatingFeedback>}
    {!busy&&!itemError&&!items.length&&<p className="detail-hint">{filter==="failed"?"当前没有失败项。":"尚未接收文件。"}</p>}
    <ul className="operation-items">{items.map(item=>{const file=isFileReference(item.file_id),query=new URLSearchParams({file:item.file_successor?.id||item.file_id});const owner=item.file_successor?.owner_id||item.owner_id||operation.owner_id;if(admin&&owner&&owner!==actor.owner_id)query.set("owner_id",owner);return <li key={item.key}><div><strong>{item.file_name||"未命名文件"}</strong>{item.file_successor&&<small>{item.file_successor.kind==="transferred"?"已转移归属，原件保留":"已完成加密转换"}</small>}{file&&(item.file_exists===true||item.file_successor)?<Link to={`${admin?"/admin":"/library"}?${query}`} onClick={onNavigate}>{item.file_successor?"查看新位置":"查看文件"}</Link>:file&&item.file_exists===false?<small>{fileUnavailableText}</small>:null}</div><span>{itemState[item.state]||item.state}</span>{item.error&&<p>{item.error}</p>}</li>})}</ul>
    {(page>1||next>0)&&<nav className="log-paging" aria-label="文件明细分页"><span>第 {page} 页</span><button type="button" className="btn btn-sm" disabled={busy||page===1} onClick={()=>setPage(value=>value-1)}>上一页</button><button type="button" className="btn btn-sm" disabled={busy||!next} onClick={()=>setPage(next)}>下一页</button></nav>}

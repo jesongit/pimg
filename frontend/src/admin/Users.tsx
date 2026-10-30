@@ -1,3 +1,4 @@
+import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fmtSize } from "../api";
@@ -33,7 +34,7 @@ export default function Users() {
   return <div className="users-page">
     <header className="users-heading"><div><h1>用户管理</h1><p>管理账号访问与专属归档空间。</p></div><button className="btn btn-crayon" onClick={()=>setEditor({mode:"create"})}>创建用户</button></header>
     <div className="users-toolbar"><label className="users-search"><span className="sr-only">搜索用户或群名</span><input className="input" type="search" placeholder="搜索用户或群名" value={query} onChange={e=>setQuery(e.target.value)}/></label><label className="users-filter">状态<select className="input" value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">全部</option><option value="active">启用</option><option value="disabled">停用</option></select></label><span className="users-count" aria-live="polite">{loading?"读取中…":`${shown.length} 个账号`}</span><button className="btn" disabled={!!busy} onClick={()=>void action("refresh",async()=>{const result=await api.post<{items:User[]}>("/api/admin/accounts/telegram/refresh",{});if(mounted.current)setItems(result.items)},"TG 群名已同步")}>{busy==="refresh"?"同步中…":"同步 TG 群名"}</button></div>
-    {error&&<div className="users-error" role="alert"><span>{error}</span><button className="btn btn-sm" onClick={()=>void load()}>重试读取</button></div>}
+    {error&&<FloatingFeedback className="users-error" role="alert"><span>{error}</span><button className="btn btn-sm" onClick={()=>void load()}>重试读取</button></FloatingFeedback>}
     <div className="users-registry"><table className="users-table" aria-label="用户列表"><colgroup><col className="users-account-column"/><col className="users-role-column"/><col className="users-status-column"/><col className="users-usage-column"/><col className="users-space-column"/><col className="users-actions-column"/></colgroup><thead><tr><th scope="col">用户</th><th scope="col">角色</th><th scope="col">状态</th><th scope="col">用量</th><th scope="col">TG 归档群</th><th scope="col" className="users-actions-heading">操作</th></tr></thead><tbody>
       {shown.map(user=>{const space=user.telegram;return <tr key={user.id} className="users-row" data-owner-id={user.id}>
         <th scope="row" className="users-account-cell"><strong className="users-name" title={user.username}>{user.username}</strong></th>
@@ -89,7 +90,7 @@ function UserEditor({editor,close,saved}:{editor:Editor;close:()=>void;saved:(me
     {["create","password"].includes(mode)&&<label>{mode==="create"?"初始密码":"新密码"}<input className="input" aria-label={mode==="create"?"初始密码":"新密码"} type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={password} onChange={e=>setPassword(e.target.value)} disabled={busy}/><span className="users-secondary">至少 8 位。</span></label>}
     {mode==="group"&&<p className="users-editor-note">同步修改 TG 群名，文件、话题和“相册”文件夹中的归属保持不变。</p>}
     {mode==="password"&&<p className="users-editor-note">该用户的现有登录会话和访问令牌将撤销，需使用新密码登录。</p>}
-    {error&&<p className="users-error-text" role="alert">{error}</p>}
+    {error&&<FloatingFeedback className="users-error-text" role="alert">{error}</FloatingFeedback>}
     <footer><button type="button" className="btn" disabled={busy} onClick={requestClose}>取消</button><button className="btn btn-crayon" disabled={busy}>{busy?"提交中…":{create:"创建用户",edit:"保存资料",password:"重置密码",group:"同步群名"}[mode]}</button></footer>
   </form></div></>;
 }
