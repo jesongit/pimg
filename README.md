@@ -3,7 +3,7 @@
 隐私优先的自托管图床，管理图片、视频与相册，按需公开和分享。
 
 [![Docker Hub](https://img.shields.io/docker/pulls/posase/pimg?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/posase/pimg)
-[![Version](https://img.shields.io/badge/version-v1.0.36-526c81)](https://hub.docker.com/r/posase/pimg/tags?name=v1.0.36)
+[![Version](https://img.shields.io/badge/version-v1.0.37-526c81)](https://hub.docker.com/r/posase/pimg/tags?name=v1.0.37)
 [![Demo](https://img.shields.io/badge/demo-www.posase.net-36734a)](https://www.posase.net/)
 
 [在线演示](https://www.posase.net/) · [快速部署](#快速开始) · [使用说明](docs/usage.md) · [存储配置](docs/storage-guide.md) · [部署与升级](docs/deployment.md) · [问题反馈](https://github.com/jesongit/pimg/issues)
@@ -45,7 +45,7 @@ PIMG 将文件管理与公开展示分开：上传后先归档，再由你决定
 
 ## 快速开始
 
-推荐使用 Docker。当前正式镜像为 **`posase/pimg:v1.0.36`**，支持 **`linux/amd64`**；镜像已包含 FFmpeg、FFprobe 和 HEIC 预览工具。
+推荐使用 Docker。当前正式镜像为 **`posase/pimg:v1.0.37`**，支持 **`linux/amd64`**；镜像已包含 FFmpeg、FFprobe 和 HEIC 预览工具。
 
 以下命令使用本地存储，可先体验，再在后台配置 Telegram 或 R2：
 
@@ -58,7 +58,7 @@ docker run -d \
   -v pimg-runtime:/pimg/runtime \
   -e PIMG_COLD_STORAGE=local \
   -e PIMG_HOT_STORAGE=local \
-  posase/pimg:v1.0.36
+  posase/pimg:v1.0.37
 ```
 
 1. 打开 <http://127.0.0.1:8787>，点击首页介绍或页脚后台入口，也可直接访问 `/login`。
@@ -107,7 +107,7 @@ Compose 默认对外绑定 `8787` 端口；请根据部署环境调整 `ports`�
 
 `/pimg/data` 保存数据库、主密钥、Telegram 会话、本地存储及待完成上传；`/pimg/runtime` 保存可重建的预览和运行缓存。数据库必须与**原主密钥**一起备份，外部本地存储目录也需单独保留。
 
-详细步骤见[部署与升级](docs/deployment.md#升级已有实例)，本次变化见 [v1.0.36 更新说明](docs/releases/v1.0.36.md)。
+详细步骤见[部署与升级](docs/deployment.md#升级已有实例)，本次变化见 [v1.0.37 更新说明](docs/releases/v1.0.37.md)。
 
 ## 文档与开发
 

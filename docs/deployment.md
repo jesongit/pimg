@@ -1,6 +1,6 @@
 # 部署与升级
 
-正式镜像：[posase/pimg](https://hub.docker.com/r/posase/pimg)，当前版本 `v1.0.36`，仅 `linux/amd64`。内置前端、FFmpeg、FFprobe 和 HEIC 预览工具。
+正式镜像：[posase/pimg](https://hub.docker.com/r/posase/pimg)，当前版本 `v1.0.37`，仅 `linux/amd64`。内置前端、FFmpeg、FFprobe 和 HEIC 预览工具。
 
 ## Docker
 
@@ -13,7 +13,7 @@ docker run -d --name pimg --restart unless-stopped \
   -v /opt/pimg/runtime:/pimg/runtime \
   -e PIMG_COLD_STORAGE=local \
   -e PIMG_HOT_STORAGE=local \
-  posase/pimg:v1.0.36
+  posase/pimg:v1.0.37
 ```
 
 首次默认 `admin/admin`，登录后按提示更换密码。可通过 `PIMG_ADMIN_USERNAME`、`PIMG_ADMIN_PASSWORD` 指定初始账号；已有数据库使用原账号，不会被新环境值重置。
@@ -45,6 +45,8 @@ docker compose up -d --no-build
 站点名称、介绍、公开范围、存储连接、上传限制、临时保留及公网地址在后台管理。`.env.example` 列出初始化及路径设置，已迁移到网页的配置以后台保存值为准。
 
 公网使用 HTTPS 反向代理，在「设置 → 站点信息」填写实际地址。本站永久、临时入口需要 PIMG 保持在线；提供方直接地址只对应具体副本。
+
+一键复制原图需要支持图片剪贴板的浏览器，并通过 HTTPS 或 localhost 访问。局域网普通 HTTP 支持链接和令牌的文本复制；图片会打开完整原图，供右键选择「复制图片」。
 
 需要存储出站代理时在后台连接配置填写代理地址；可参考 `deploy/proxy/config.example.yaml` 创建未入库的实际代理配置，不要将代理凭据提交到 Git。
 

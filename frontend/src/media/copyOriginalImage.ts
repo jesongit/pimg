@@ -19,7 +19,7 @@ export async function copyOriginalImage(url: string, ext: string, size: number, 
   }
 }
 
-async function originalPNG(url: string, ext: string, size: number, signal: AbortSignal): Promise<Blob> {
+export async function originalPNG(url: string, ext: string, size: number, signal: AbortSignal): Promise<Blob> {
   const response = await fetch(url, { credentials: "same-origin", signal });
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new Event("pimg:unauthorized"));

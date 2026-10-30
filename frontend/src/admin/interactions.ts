@@ -91,10 +91,33 @@ export function fileStatus(f: FileItem) {
 }
 
 export async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(text); return; } catch { /* Try the user-initiated text selection below. */ }
+  }
+  // LAN HTTP does not expose the Clipboard API. Keep the selection inside an
+  // open dialog so native dialog focus containment cannot redirect the copy.
+  const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const selection = window.getSelection();
+  const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
+  const field = previous instanceof HTMLInputElement || previous instanceof HTMLTextAreaElement ? previous : null;
+  const start = field?.selectionStart, end = field?.selectionEnd, direction = field?.selectionDirection;
+  const dialogs = Array.from(document.querySelectorAll<HTMLElement>('dialog[open],[role="dialog"][aria-modal="true"]')).filter(dialog => dialog.getClientRects().length);
+  const host = previous?.closest('dialog[open],[role="dialog"][aria-modal="true"]') || dialogs[dialogs.length - 1] || document.body;
+  const input = document.createElement("textarea");
+  input.value = text; input.readOnly = true; input.tabIndex = -1;
+  input.setAttribute("aria-hidden", "true");
+  Object.assign(input.style, { position: "fixed", top: "0", left: "0", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
+  host.appendChild(input);
   try {
-    if (!navigator.clipboard?.writeText) throw new Error();
-    await navigator.clipboard.writeText(text);
+    input.focus({ preventScroll: true }); input.select(); input.setSelectionRange(0, text.length);
+    if (!document.execCommand("copy")) throw new Error();
   } catch { throw new Error("无法自动复制，请选中链接或令牌后手动复制。"); }
+  finally {
+    input.remove();
+    if (previous?.isConnected) previous.focus({ preventScroll: true });
+    if (selection) { selection.removeAllRanges(); ranges.forEach(range => selection.addRange(range)); }
+    if (field?.isConnected && start != null && end != null) field.setSelectionRange(start, end, direction || undefined);
+  }
 }
 
 export type LinkFormat = "url" | "md" | "html";

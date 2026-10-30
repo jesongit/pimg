@@ -17,7 +17,8 @@
 .media-fullscreen-session:fullscreen,.media-fullscreen-session.is-expanded{display:block;width:100%;height:100%;background:#0c1015}
 .media-fullscreen-session.is-expanded{position:fixed;inset:0;z-index:1000;width:100vw;height:100dvh}
 .media-fullscreen-session.is-expanded .detail-workspace{inset:0;width:100%;max-width:none;height:100%;border:0;border-radius:0;background:#0c1015}
-.media-fullscreen-session.is-expanded .detail-topbar{display:none}
+.media-fullscreen-session.is-expanded .detail-topbar,.media-fullscreen-session.is-expanded .detail-action-dock,.media-fullscreen-session.is-expanded .media-progress-edge,.media-fullscreen-session.is-expanded .detail-function-panel{display:none}
+.media-fullscreen-stage.is-expanded>.media-progress-edge,.media-fullscreen-stage:fullscreen>.media-progress-edge{display:none}
 .media-fullscreen-session.is-expanded .media-viewer-stage.is-expanded{position:relative;inset:auto;flex:1;min-height:0;width:auto;height:auto}
 .media-fullscreen-session.is-expanded .detail-loading,.media-fullscreen-session.is-expanded .detail-load-error{color:#f5f6f8}
 .media-fullscreen-action{position:absolute;inset:50% auto auto 50%;z-index:8;transform:translate(-50%,-50%);width:min(360px,calc(100% - 112px));text-align:center;color:#f5f6f8}
