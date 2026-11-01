@@ -162,26 +162,32 @@ func SnapshotLocalImport(tx *sql.Tx, id, album int64, source string, owners ...s
 // Historical records have explicit unknown origins; never infer a move's old
 // album from its file's current album after the operation has already finished.
 func (db *DB) ActivityContext(t *ActivityTask) (ActivityContext, error) {
+	// History enrichment is read-only. It must not queue behind workers on the
+	// sole writer connection once the paginated list has finished loading.
+	reader := db.reader
+	if reader == nil {
+		reader = db.DB
+	}
 	var c ActivityContext
 	var raw string
 	var operation int64
 	if t.Group != nil && t.Group.BatchID > 0 {
 		var root string
 		var album int64
-		if err := db.QueryRow(`SELECT context,root,album_id FROM local_import_batches WHERE id=?`, t.Group.BatchID).Scan(&raw, &root, &album); err != nil {
+		if err := reader.QueryRow(`SELECT context,root,album_id FROM local_import_batches WHERE id=?`, t.Group.BatchID).Scan(&raw, &root, &album); err != nil {
 			return c, err
 		}
 		if err := json.Unmarshal([]byte(raw), &c); err != nil {
 			return c, err
 		}
 		if c.ToAlbum == nil {
-			a := contextAlbum(db, album)
+			a := contextAlbum(reader, album)
 			c.ToAlbum = &a
 			c.Source = root
 		}
 		if !t.LastError.Valid || t.LastError.String == "" {
 			var message string
-			err := db.QueryRow(`SELECT error FROM local_import_items WHERE batch_id=? AND state='failed' AND error!='' ORDER BY id LIMIT 1`, t.Group.BatchID).Scan(&message)
+			err := reader.QueryRow(`SELECT error FROM local_import_items WHERE batch_id=? AND state='failed' AND error!='' ORDER BY id LIMIT 1`, t.Group.BatchID).Scan(&message)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return c, err
 			}
@@ -191,7 +197,7 @@ func (db *DB) ActivityContext(t *ActivityTask) (ActivityContext, error) {
 		}
 	} else {
 		var kind, scope string
-		err := db.QueryRow(`SELECT o.id,o.context,o.kind,o.scope FROM task_operation_jobs j JOIN task_operations o ON o.id=j.operation_id WHERE j.task_id=?`, t.ID).Scan(&operation, &raw, &kind, &scope)
+		err := reader.QueryRow(`SELECT o.id,o.context,o.kind,o.scope FROM task_operation_jobs j JOIN task_operations o ON o.id=j.operation_id WHERE j.task_id=?`, t.ID).Scan(&operation, &raw, &kind, &scope)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return c, err
 		}
@@ -202,7 +208,7 @@ func (db *DB) ActivityContext(t *ActivityTask) (ActivityContext, error) {
 			if c.ToAlbum == nil && strings.HasPrefix(scope, "album:") {
 				var album int64
 				if _, err = fmt.Sscanf(scope, "album:%d", &album); err == nil {
-					a := contextAlbum(db, album)
+					a := contextAlbum(reader, album)
 					c.ToAlbum = &a
 				}
 			}
@@ -223,8 +229,8 @@ func (db *DB) ActivityContext(t *ActivityTask) (ActivityContext, error) {
 	if t.Type == TaskCleanupTemp || t.Type == TaskTempMaterialize {
 		table, backend = "temp_objects", "r.backend"
 	}
-	rows, err := db.Query(`SELECT DISTINCT i.name FROM `+table+` r JOIN storage_instances i ON i.id=`+backend+`
- WHERE r.file_id=? OR (?!=0 AND r.file_id IN(SELECT t.file_id FROM task_operation_jobs j JOIN tasks t ON t.id=j.task_id WHERE j.operation_id=?)) ORDER BY i.name`, t.FileID.String, operation, operation)
+	rows, err := reader.Query(`SELECT DISTINCT i.name FROM `+table+` r JOIN storage_instances i ON i.id=`+backend+`
+ WHERE r.file_id IN (SELECT ? UNION SELECT t.file_id FROM task_operation_jobs j JOIN tasks t ON t.id=j.task_id WHERE j.operation_id=? AND j.operation_id!=0) ORDER BY i.name`, t.FileID.String, operation)
 	if err != nil {
 		return c, err
 	}
@@ -255,11 +261,9 @@ func (db *DB) ActivityContext(t *ActivityTask) (ActivityContext, error) {
 	if t.Type == "account_space" || t.Type == "account_group_title" {
 		name := payload.OwnerID
 		if payload.OwnerID == AdminOwner {
-			if user, _, e := db.GetAdmin(); e == nil {
-				name = user
-			}
+			_ = reader.QueryRow(`SELECT username FROM admin WHERE id=1`).Scan(&name)
 		} else if payload.OwnerID != "" {
-			_ = db.QueryRow(`SELECT username FROM accounts WHERE id=?`, payload.OwnerID).Scan(&name)
+			_ = reader.QueryRow(`SELECT username FROM accounts WHERE id=?`, payload.OwnerID).Scan(&name)
 		}
 		if name != "" {
 			c.Description = "账号「" + name + "」"
@@ -270,7 +274,7 @@ func (db *DB) ActivityContext(t *ActivityTask) (ActivityContext, error) {
 	}
 	if t.Type == TaskConvert || t.Group != nil && t.Group.Kind == "convert" {
 		var encrypted bool
-		if e := db.QueryRow(`SELECT target_encrypted FROM file_conversions WHERE source_id=? OR target_id=? LIMIT 1`, t.FileID.String, t.FileID.String).Scan(&encrypted); e == nil {
+		if e := reader.QueryRow(`SELECT target_encrypted FROM file_conversions WHERE source_id=? OR target_id=? LIMIT 1`, t.FileID.String, t.FileID.String).Scan(&encrypted); e == nil {
 			if encrypted {
 				c.Description = "未加密 → 加密"
 			} else {

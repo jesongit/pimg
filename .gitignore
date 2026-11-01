@@ -1,6 +1,7 @@
 # Local configuration and credentials
 .env
 .env.*
+online.env
 !.env.example
 config.yaml
 config.*.yaml
@@ -74,6 +75,7 @@ node_modules/
 !/docs/releases/v1.0.36.md
 !/docs/releases/v1.0.37.md
 !/docs/releases/v1.0.38.md
+!/docs/releases/v1.0.39.md
 
 # Operating system and editor state
 .DS_Store

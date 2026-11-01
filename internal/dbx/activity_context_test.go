@@ -3,7 +3,55 @@ package dbx
 import (
 	"fmt"
 	"testing"
+	"time"
 )
+
+func TestActivityContextDoesNotWaitForBackgroundWriter(t *testing.T) {
+	d := activityDB(t)
+	f := operationFixtureFile(t, d, "context-wal")
+	op := beginOperationFixture(t, d, "upload", "context-wal", 1)
+	if _, err := d.EnqueueTask(TaskArchive, f.ID, "{}", op.ID); err != nil {
+		t.Fatal(err)
+	}
+	group, err := d.GetTaskGroup(op.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, _ := importReceiptFixture(t, d, "/context-wal-import")
+	tx, err := d.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE task_operations SET context='{"description":"uncommitted"}' WHERE id=?`, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		for _, task := range []*ActivityTask{group, {Task: &Task{}, Group: &TaskGroup{BatchID: batch}}, {Task: &Task{Type: "account_space", Payload: `{"owner_id":"admin:1"}`}}} {
+			c, e := d.ActivityContext(task)
+			if e != nil {
+				done <- e
+				return
+			}
+			if c.Description == "uncommitted" {
+				done <- fmt.Errorf("history read uncommitted worker data")
+				return
+			}
+		}
+		done <- nil
+	}()
+	select {
+	case err = <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		tx.Rollback()
+		<-done
+		t.Fatal("history context waited for the single writer connection")
+	}
+}
 
 func TestActivityMoveKeepsOriginalAndDestinationAfterLaterChanges(t *testing.T) {
 	d := activityDB(t)

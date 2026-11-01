@@ -66,6 +66,36 @@ func TestTaskReadPlanMatchesReleasedSemantics(t *testing.T) {
 	}
 }
 
+func TestTaskReadPlanKeepsLargeSingleTaskResults(t *testing.T) {
+	d := readPlanFixture(t, 240)
+	if _, err := d.EnqueueTask(TaskCleanupTemp, "", "{}"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`UPDATE tasks SET result=json_object('id',id,'detail',printf('%04000d',id))`); err != nil {
+		t.Fatal(err)
+	}
+	// Compare full rows, including NULL versus non-NULL results. Imported and
+	// multi-member groups must still omit results; one-member groups retain them.
+	// Internal GROUP_CONCAT search text has no defined order and is not exported.
+	for _, active := range []bool{false, true} {
+		suffix := ` SELECT group_key,id,type,file_id,payload,state,attempts,max_attempts,last_error,result,run_after,lease_until,created_at,updated_at,done_at,cancel_requested,group_json,retained_name,retained_owner FROM grouped_tasks`
+		if active {
+			suffix += ` WHERE state IN ('pending','running')`
+		}
+		suffix += ` ORDER BY group_key`
+		if querySnapshot(t, d, taskGroupsCTE+suffix) != querySnapshot(t, d, taskReadCTE(taskGroupsCTE, true, active)+suffix) {
+			t.Fatal("read plan changed task results or progress", active)
+		}
+	}
+	for _, q := range []LogQuery{{}, {State: "issues"}, {State: "done"}, {Search: "image-1"}, {GroupID: 242}, {Page: 2, Limit: 7}} {
+		got, total, err := d.QueryUnifiedLogs(q)
+		want, count, oldErr := d.legacyUnifiedLogs(q)
+		if err != nil || oldErr != nil || total != count || !reflect.DeepEqual(got, want) {
+			t.Fatal("log result changed", q, total, count, err, oldErr)
+		}
+	}
+}
+
 func TestTaskReadPlanPerformance(t *testing.T) {
 	out := os.Getenv("PIMG_READ_PLAN_PERF_OUTPUT")
 	if out == "" {

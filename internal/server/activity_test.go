@@ -5,7 +5,36 @@ import (
 	"net/http/httptest"
 	"pimg/internal/dbx"
 	"testing"
+	"time"
 )
+
+func TestTaskPageReadDoesNotAcquireWriterWithoutExpiredIntake(t *testing.T) {
+	s := interactionServer(t)
+	if _, err := s.DB.EnqueueTask(dbx.TaskCleanupTemp, "", "{}"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		s.handleUnifiedLogs(w, httptest.NewRequest("GET", "/api/admin/logs?record=tasks&state=active&sort=active", nil))
+		done <- w
+	}()
+	select {
+	case w := <-done:
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		tx.Rollback()
+		<-done
+		t.Fatal("task page read queued behind the background writer")
+	}
+}
 
 func TestActivityAPIScopeAndPaging(t *testing.T) {
 	s := coldRepositoryServer(t)

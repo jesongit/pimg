@@ -6,7 +6,6 @@ import (
 	"pimg/internal/dbx"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func (s *Server) handleUnifiedLogs(w http.ResponseWriter, r *http.Request) {
@@ -14,10 +13,8 @@ func (s *Server) handleUnifiedLogs(w http.ResponseWriter, r *http.Request) {
 		s.handleLogTimeline(w, r)
 		return
 	}
-	if err := s.DB.ExpireTaskOperations(time.Now().Unix()); err != nil {
-		fail(w, 500, "读取操作状态失败")
-		return
-	}
+	// Grouped reads already expire intake operations only when one is due.
+	// An ordinary page visit must not acquire the writer for a no-op update.
 	q := r.URL.Query()
 	kind := q.Get("record")
 	if kind == "" {

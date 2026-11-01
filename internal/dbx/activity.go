@@ -37,7 +37,7 @@ func (db *DB) ActivityTaskCounts(fileID string) (TaskCounts, error) {
 		}
 		// A navigation badge needs state only. Avoid building every historical
 		// operation's JSON, file counts, errors and concatenated search contents.
-		err := db.ReadQueryRow(taskMembersCTE+`, candidate_groups AS MATERIALIZED (
+		err := db.ReadQueryRow(taskMemberReadCTE(taskMembersCTE, true)+`, candidate_groups AS MATERIALIZED (
  SELECT DISTINCT m.group_key FROM task_members m
  LEFT JOIN task_operations o ON o.id=m.group_operation_id LEFT JOIN import_bounds b ON b.id=m.batch_id
  WHERE m.state IN ('pending','running') OR o.input_state='open' OR b.state IN ('paused','running','scanning')),
