@@ -26,7 +26,7 @@ import (
 var frontendFS = frontendembed.FS
 
 // Version 版本号。
-const Version = "1.0.39"
+const Version = "1.0.40"
 
 type Server struct {
 	Cfg                              *config.Config
@@ -92,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/diagnostics/logs", s.diagnosticAuth(s.handleDiagnosticLogs))
 	mux.HandleFunc("GET /api/diagnostics/activity", s.diagnosticAuth(s.handleDiagnosticActivity))
 	mux.HandleFunc("GET /api/diagnostics/metrics", s.diagnosticAuth(s.handleDiagnosticMetrics))
+	mux.HandleFunc("GET /api/diagnostics/telegram", s.diagnosticAuth(s.handleDiagnosticTelegram))
 
 	// 公共
 	mux.HandleFunc("GET /healthz", s.handleHealth)

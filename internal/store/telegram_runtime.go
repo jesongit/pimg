@@ -105,6 +105,9 @@ func (r *telegramRuntime) authorizedClient() (telegramUserClient, error) {
 		if st.Error != "" {
 			return nil, errors.New(st.Error)
 		}
+		if st.State == "connecting" {
+			return nil, errors.New("Telegram 正在建立连接，归档等待连接恢复")
+		}
 		return nil, errors.New("请先配置并授权 Telegram 用户账号")
 	}
 	c := r.current()
@@ -526,6 +529,9 @@ func (s *Service) TGReady() error {
 	if st.State != "authorized" {
 		if st.Error != "" {
 			return errors.New(st.Error)
+		}
+		if st.State == "connecting" {
+			return errors.New("Telegram 正在建立连接，归档等待连接恢复")
 		}
 		return errors.New("请先在设置中完成 Telegram 用户账号授权")
 	}

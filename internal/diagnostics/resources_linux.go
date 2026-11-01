@@ -15,6 +15,11 @@ func platformResources(directory string) map[string]any {
 	var usage syscall.Rusage
 	if syscall.Getrusage(syscall.RUSAGE_SELF, &usage) == nil {
 		v["process_cpu_seconds"] = float64(usage.Utime.Sec+usage.Stime.Sec) + float64(usage.Utime.Usec+usage.Stime.Usec)/1e6
+		v["process_major_page_faults"] = usage.Majflt
+		v["process_minor_page_faults"] = usage.Minflt
+	}
+	if raw, err := os.ReadFile("/proc/self/io"); err == nil {
+		addProcessIO(v, string(raw))
 	}
 	if raw, err := os.ReadFile("/proc/self/statm"); err == nil {
 		fields := strings.Fields(string(raw))

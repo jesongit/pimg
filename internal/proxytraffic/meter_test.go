@@ -20,6 +20,28 @@ func testMeter(t *testing.T, now *time.Time, save func(State) error) *Meter {
 	return m
 }
 
+func TestDiagnosticSnapshotDoesNotPersistOrModifyLivePeriod(t *testing.T) {
+	now := at("2026-10-31 23:59")
+	saves := 0
+	m := testMeter(t, &now, func(State) error { saves++; return nil })
+	m.state.DailyUsed, m.state.MonthlyUsed = m.state.DailyLimit, m.state.MonthlyLimit
+	before, writes := m.state, saves
+	if !m.Snapshot().Blocked {
+		t.Fatal("snapshot hid current quota block")
+	}
+	now = at("2026-11-01 00:01")
+	if v := m.Snapshot(); v.Blocked || v.DailyUsed != 0 || v.MonthlyUsed != 0 {
+		t.Fatal("snapshot did not project current period", v)
+	}
+	if m.state != before || saves != writes {
+		t.Fatal("diagnostic snapshot wrote or reset live counters")
+	}
+	m.err = errors.New("persistence failure")
+	if !m.Snapshot().Blocked || m.err == nil || saves != writes {
+		t.Fatal("snapshot hid a failed save or retried persistence")
+	}
+}
+
 func TestConfiguredBoundaries(t *testing.T) {
 	s := DefaultState()
 	s.DailyReset = "06:30"

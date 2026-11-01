@@ -45,6 +45,7 @@ type Client struct {
 	runContext    context.Context
 	restarting    bool
 	proxySeen     atomic.Bool
+	connection    ConnectionDiagnostics // guarded by mu; no raw transport errors
 	// The phone and code hash exist only during the interactive login flow.
 	// Neither the code nor the password is retained by Client.
 	authMu   sync.Mutex
@@ -111,6 +112,21 @@ func (c *Client) connectionState(state telegram.ConnectionState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.connected = state == telegram.ConnectionStateReady
+	c.connection.TransportState = state.String()
+	if c.connected {
+		c.connection.LastReadyAt = time.Now().UnixMilli()
+		c.connection.ConnectingSince = 0
+		if c.status.State == "connecting" {
+			c.status.Error = ""
+		}
+	} else {
+		if c.connection.ConnectingSince == 0 {
+			c.connection.ConnectingSince = time.Now().UnixMilli()
+		}
+		if state == telegram.ConnectionStateDisconnected {
+			c.connection.Disconnects++
+		}
+	}
 	if state != telegram.ConnectionStateReady {
 		c.readyNotified = false
 		if c.status.State != "reauth_required" {
@@ -167,31 +183,30 @@ func (c *Client) runConnection(parent context.Context) error {
 	}()
 	store, err := newSessionStorage(c.opts.SessionFile, c.opts.SessionKey)
 	if err != nil {
+		c.connectionFailure("session", err)
 		c.setState("error", err.Error())
 		return err
 	}
-	resolver := dcs.DefaultResolver()
 	dial, err := clientProxyDial(c.opts.ProxyURL, c.opts.ProxyTraffic)
 	if err != nil {
+		c.connectionFailure("proxy_configuration", err)
 		c.setState("error", err.Error())
 		return err
 	}
-	if dial != nil {
-		configuredDial := dial
-		dial = func(ctx context.Context, network, target string) (net.Conn, error) {
-			if proxySelected(c.opts.ProxyURL, target) {
-				c.proxySeen.Store(true)
-			}
-			return configuredDial(ctx, network, target)
-		}
-		resolver = dcs.Plain(dcs.PlainOptions{Dial: dial})
+	if dial == nil {
+		var direct net.Dialer
+		dial = direct.DialContext
 	}
+	// This preserves the SDK's default native Plain resolver, adding only
+	// bounded observations around its actual selected TCP/proxy dialer.
+	resolver := dcs.Plain(dcs.PlainOptions{Dial: c.diagnosticDial(dial)})
 	mt := telegram.NewClient(c.opts.APIID, c.opts.APIHash, telegram.Options{
 		SessionStorage: store, Resolver: resolver,
 		Device:            telegram.DeviceConfig{DeviceModel: "PIMG", SystemVersion: "PIMG archive", AppVersion: "1.0", LangCode: "en", SystemLangCode: "en"},
 		UpdateHandler:     telegram.UpdateHandlerFunc(c.handleUpdates),
 		Middlewares:       []telegram.Middleware{telegram.MiddlewareFunc(c.middleware)},
 		OnConnectionState: c.connectionState,
+		OnDead:            func(err error) { c.connectionFailure("mtproto", err) },
 		OnSelfSuccess:     func(u *tg.User) { _ = c.authorized(u) },
 		OnSelfError: func(_ context.Context, err error) error {
 			if auth.IsUnauthorized(err) {
@@ -201,6 +216,11 @@ func (c *Client) runConnection(parent context.Context) error {
 					c.status.Error = "Telegram 会话已失效，请重新授权"
 				}
 				c.mu.Unlock()
+				if c.Status().AccountID != 0 {
+					c.connectionFailure("authorization", ErrNotAuthorized)
+				}
+			} else {
+				c.connectionFailure("authorization_check", err)
 			}
 			return nil
 		},
@@ -232,6 +252,7 @@ func (c *Client) runConnection(parent context.Context) error {
 		return ctx.Err()
 	}
 	if err != nil {
+		c.connectionFailure("runtime", err)
 		err = c.safeError(err)
 		if c.Status().State != "reauth_required" {
 			c.setState("error", err.Error())

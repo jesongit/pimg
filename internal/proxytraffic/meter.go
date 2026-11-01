@@ -169,6 +169,22 @@ func (m *Meter) View() View {
 	return m.viewLocked()
 }
 
+// Snapshot projects the current period without persisting a reset, retrying a
+// failed save, or closing sockets. Diagnostic GETs must not mutate the meter.
+func (m *Meter) Snapshot() View {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	copy := &Meter{state: m.state, now: m.now, err: m.err}
+	d, _, month, _ := boundaries(copy.state, copy.now())
+	if d.Unix() > copy.state.DayStart {
+		copy.state.DayStart, copy.state.DailyUsed = d.Unix(), 0
+	}
+	if month.Unix() > copy.state.MonthStart {
+		copy.state.MonthStart, copy.state.MonthlyUsed = month.Unix(), 0
+	}
+	return copy.viewLocked()
+}
+
 func (m *Meter) Check() error {
 	if m == nil {
 		return nil

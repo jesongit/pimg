@@ -109,7 +109,7 @@ func proxyDial(raw string, meters ...*proxytraffic.Meter) (dcs.DialFunc, error) 
 				if errors.Is(err, proxytraffic.ErrLimit) {
 					return nil, err
 				}
-				return nil, errors.New("Telegram 代理连接失败")
+				return nil, &transportFailure{stage: "proxy_connect", message: "Telegram 代理连接失败", cause: err}
 			}
 			rawConn := conn
 			closeOnCancel := context.AfterFunc(ctx, func() { _ = rawConn.Close() })
@@ -128,7 +128,7 @@ func proxyDial(raw string, meters ...*proxytraffic.Meter) (dcs.DialFunc, error) 
 			if scheme == "https" {
 				secure := tls.Client(conn, &tls.Config{ServerName: u.Hostname(), MinVersion: tls.VersionTLS12})
 				if err := secure.HandshakeContext(ctx); err != nil {
-					return nil, errors.New("Telegram 代理 TLS 连接失败")
+					return nil, &transportFailure{stage: "proxy_tls", message: "Telegram 代理 TLS 连接失败", cause: err}
 				}
 				conn = secure
 			}
@@ -138,15 +138,15 @@ func proxyDial(raw string, meters ...*proxytraffic.Meter) (dcs.DialFunc, error) 
 				req.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(u.User.Username()+":"+password)))
 			}
 			if err := req.Write(conn); err != nil {
-				return nil, errors.New("Telegram 代理请求失败")
+				return nil, &transportFailure{stage: "proxy_connect", message: "Telegram 代理请求失败", cause: err}
 			}
 			reader := bufio.NewReader(conn)
 			response, err := http.ReadResponse(reader, req)
 			if err != nil {
-				return nil, errors.New("Telegram 代理响应无效")
+				return nil, &transportFailure{stage: "proxy_connect", message: "Telegram 代理响应无效", cause: err}
 			}
 			if response.StatusCode != http.StatusOK {
-				return nil, errors.New("Telegram 代理拒绝连接")
+				return nil, &transportFailure{stage: "proxy_connect", message: "Telegram 代理拒绝连接", status: response.StatusCode}
 			}
 			_ = conn.SetDeadline(time.Time{})
 			ok = true

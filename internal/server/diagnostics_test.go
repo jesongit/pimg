@@ -45,7 +45,7 @@ func TestDiagnosticTokenIsReadOnlyRevocableAndSanitized(t *testing.T) {
 	diagnosticToken(t, s, "admin-token", "admin", dbx.AdminOwner)
 	diagnosticToken(t, s, "other-token", "account", "user:test")
 	diagnosticToken(t, s, "spoof-owner", "diagnostics", "user:test")
-	for _, path := range []string{"/api/diagnostics/status", "/api/diagnostics/logs", "/api/diagnostics/activity"} {
+	for _, path := range []string{"/api/diagnostics/status", "/api/diagnostics/logs", "/api/diagnostics/activity", "/api/diagnostics/telegram"} {
 		for _, token := range []string{"", "bad-token", "other-token", "spoof-owner"} {
 			if w := diagnosticCall(s, path, "198.51.100.10:9999", token, ""); w.Code != 401 {
 				t.Fatal(path, token, w.Code, w.Body.String())
@@ -105,6 +105,9 @@ func TestDiagnosticTokenIsReadOnlyRevocableAndSanitized(t *testing.T) {
 	}
 	if w := diagnosticCall(s, "/api/diagnostics/status", "198.51.100.10:9999", "readonly", ""); w.Code != 401 {
 		t.Fatal("revoked token worked")
+	}
+	if w := diagnosticCall(s, "/api/diagnostics/telegram", "198.51.100.10:9999", "readonly", ""); w.Code != 401 {
+		t.Fatal("revoked token read Telegram state")
 	}
 }
 
