@@ -111,7 +111,24 @@ func browserEntryLess(a, b BrowserEntry, ordering string) bool {
 	if a.Directory != b.Directory {
 		return a.Directory
 	}
-	if !a.Directory {
+	if a.Directory {
+		// Directories group first; within the group they follow the same
+		// date keys as files (folder sizes and extensions carry no meaning,
+		// so size/type falls back to name).
+		switch ordering {
+		case "created_desc", "created_asc":
+			if (a.createdNS == 0) != (b.createdNS == 0) {
+				return a.createdNS != 0
+			}
+			if a.createdNS != b.createdNS {
+				return (a.createdNS > b.createdNS) == strings.HasSuffix(ordering, "_desc")
+			}
+		case "modified_desc", "modified_asc":
+			if a.modifiedNS != b.modifiedNS {
+				return (a.modifiedNS > b.modifiedNS) == strings.HasSuffix(ordering, "_desc")
+			}
+		}
+	} else {
 		switch ordering {
 		case "size_desc", "size_asc":
 			if a.Size != b.Size {

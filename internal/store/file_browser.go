@@ -234,6 +234,9 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 	// Linux subprocesses inherit the validated read-only descriptor, so a
 	// multi-GB source streams without a full copy first.
 	if err = mediax.MakeCompatibleFileStream(ctx, source, dest, mode, caps, w); err != nil {
+		if s.Log != nil && ctx.Err() == nil {
+			s.Log.Warn("流式兼容转换失败", "mode", mode, "file", entry.Name, "err", err.Error())
+		}
 		leader.err = err
 		return nil, true, err
 	}

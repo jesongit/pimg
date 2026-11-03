@@ -34,12 +34,16 @@ func indexOrder(ordering string) string {
 	case "modified_asc", "modified_desc":
 		column = "modified_ns"
 	}
-	// Folders always sort by name; date/size/type applies to files only.
-	unknown := ""
-	if column == "created_ns" {
-		unknown = "CASE WHEN directory=0 AND created_ns=0 THEN 1 ELSE 0 END ASC,"
+	// Folders group first and share the date keys; size/type stay file-only
+	// because folder sizes and extensions carry no meaning. Missing birth
+	// times always sort last.
+	switch {
+	case column == "created_ns":
+		return "directory DESC,CASE WHEN created_ns=0 THEN 1 ELSE 0 END ASC," + column + " " + direction + ",lower_name ASC,name ASC," + tiePath + " ASC"
+	case column == "modified_ns":
+		return "directory DESC," + column + " " + direction + ",lower_name ASC,name ASC," + tiePath + " ASC"
 	}
-	return "directory DESC," + unknown + "CASE WHEN directory=0 THEN " + column + " END " + direction + ",lower_name ASC,name ASC," + tiePath + " ASC"
+	return "directory DESC,CASE WHEN directory=0 THEN " + column + " END " + direction + ",lower_name ASC,name ASC," + tiePath + " ASC"
 }
 
 func (s *Service) browseIndexedFiles(ctx context.Context, p, query string, offset int, ordering string, opts BrowserOptions) (BrowserListing, bool, error) {

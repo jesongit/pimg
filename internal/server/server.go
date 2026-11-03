@@ -26,7 +26,7 @@ import (
 var frontendFS = frontendembed.FS
 
 // Version 版本号。
-const Version = "1.0.41"
+const Version = "1.0.42"
 
 type Server struct {
 	Cfg                              *config.Config

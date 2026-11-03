@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -496,9 +495,6 @@ func TestFileBrowserAudioOnlyCompatibilityKeepsPicture(t *testing.T) {
 }
 
 func TestFileBrowserStreamsConversionWhilePlaying(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("streaming conversion uses the inherited Linux descriptor")
-	}
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg unavailable")
 	}

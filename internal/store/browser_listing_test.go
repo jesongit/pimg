@@ -7,6 +7,52 @@ import (
 	"time"
 )
 
+func TestFolderSortingFollowsDateKeys(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano()
+	folders := []BrowserEntry{
+		{ImportPath: ImportPath{Name: "old", Directory: true}, modifiedNS: base, createdNS: base},
+		{ImportPath: ImportPath{Name: "new", Directory: true}, modifiedNS: base + 200, createdNS: base + 200},
+		{ImportPath: ImportPath{Name: "mid", Directory: true}, modifiedNS: base + 100, createdNS: base + 100},
+	}
+	expect := func(ordering string, want ...string) {
+		t.Helper()
+		items := append([]BrowserEntry(nil), folders...)
+		sortBrowserEntries(items, ordering)
+		for i, item := range items {
+			if item.Name != want[i] {
+				t.Fatalf("%s: got %v, want %v", ordering, names(items), want)
+			}
+		}
+	}
+	expect("modified_desc", "new", "mid", "old")
+	expect("modified_asc", "old", "mid", "new")
+	expect("created_desc", "new", "mid", "old")
+	expect("created_asc", "old", "mid", "new")
+	expect("size_desc", "mid", "new", "old") // No folder sizes: name fallback.
+	// Files still group after folders under every key.
+	items := append([]BrowserEntry(nil), folders...)
+	items = append(items, BrowserEntry{ImportPath: ImportPath{Name: "a.jpg"}, modifiedNS: base + 900})
+	sortBrowserEntries(items, "modified_desc")
+	if items[len(items)-1].Name != "a.jpg" {
+		t.Fatal("directories must still group first", names(items))
+	}
+	// A folder without a birth time stays last among folders.
+	items = append([]BrowserEntry(nil), folders...)
+	items = append(items, BrowserEntry{ImportPath: ImportPath{Name: "unknown", Directory: true}})
+	sortBrowserEntries(items, "created_desc")
+	if items[len(items)-1].Name != "unknown" {
+		t.Fatal("missing folder birth time must stay last", names(items))
+	}
+}
+
+func names(items []BrowserEntry) []string {
+	out := make([]string, len(items))
+	for i, item := range items {
+		out[i] = item.Name
+	}
+	return out
+}
+
 func TestBrowserWindowMatchesWholeDirectoryBeyondOldEntryLimit(t *testing.T) {
 	for _, order := range []string{"name", "name_desc", "size_asc", "size_desc", "type", "type_desc", "modified_asc", "modified_desc", "created_asc", "created_desc"} {
 		t.Run(order, func(t *testing.T) {

@@ -49,20 +49,41 @@ func MakeCompatibleFile(ctx context.Context, source *os.File, dest, mode string,
 // MakeCompatibleFileStream converts while writing fragmented MP4 to client, and
 // caches the same output at dest so later opens serve it as a complete file.
 // Fragmented output starts at the first keyframe, so playback no longer waits
-// for the whole conversion.
+// for the whole conversion. Linux subprocesses inherit the validated read-only
+// descriptor; elsewhere the validated bytes are snapshotted once, because the
+// handle's name is root-relative and unusable by a subprocess.
 func MakeCompatibleFileStream(ctx context.Context, source *os.File, dest, mode string, caps BrowserCaps, client io.Writer) error {
-	if runtime.GOOS != "linux" {
-		return errors.New("当前平台需要兼容处理快照")
-	}
 	if mode != "remux" && mode != "transcode" {
 		return errors.New("此文件不能流式生成兼容查看版本")
 	}
+	sourcePath := source.Name()
+	var snapshot string
+	if runtime.GOOS == "linux" {
+		sourcePath = "/proc/self/fd/3"
+	} else {
+		snap, err := os.CreateTemp(filepath.Dir(dest), "stream-src-*.part")
+		if err != nil {
+			return err
+		}
+		if _, err = io.Copy(snap, source); err != nil {
+			snap.Close()
+			return err
+		}
+		if err = snap.Close(); err != nil {
+			return err
+		}
+		snapshot = snap.Name()
+		defer os.Remove(snapshot)
+		sourcePath = snapshot
+	}
 	command := func(name string, args ...string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, name, args...)
-		cmd.ExtraFiles = []*os.File{source}
+		if runtime.GOOS == "linux" {
+			cmd.ExtraFiles = []*os.File{source}
+		}
 		return cmd
 	}
-	info, err := inspectVideo(command("ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,color_transfer:format=duration,start_time,format_name", "-of", "json", "/proc/self/fd/3"))
+	info, err := inspectVideo(command("ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,color_transfer:format=duration,start_time,format_name", "-of", "json", sourcePath))
 	if err != nil {
 		return err
 	}
@@ -70,11 +91,10 @@ func MakeCompatibleFileStream(ctx context.Context, source *os.File, dest, mode s
 	if err != nil {
 		return err
 	}
-	defer func() {
-		output.Close()
-		os.Remove(output.Name())
-	}()
-	args := append(compatibleArgs(info, mode, caps), "-f", "mp4", "-movflags", "+empty_moov+frag_keyframes+default_base_moof", "pipe:1")
+	defer os.Remove(output.Name())
+	args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1", "-i", sourcePath}
+	args = append(args, compatibleArgs(info, mode, caps)...)
+	args = append(args, "-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", "pipe:1")
 	cmd := command("ffmpeg", args...)
 	var diagnostic limitedVideoDiagnostic
 	cmd.Stderr = &diagnostic
@@ -95,11 +115,15 @@ func MakeCompatibleFileStream(ctx context.Context, source *os.File, dest, mode s
 	if err == nil {
 		err = output.Sync()
 	}
+	// Close before renaming: an open handle blocks the rename on Windows.
+	if closeErr := output.Close(); err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 400))
+		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
 	}
 	// Only a fully converted file may appear under the cache name.
 	return os.Rename(output.Name(), dest)
@@ -155,7 +179,7 @@ func makeCompatible(ctx context.Context, source string, file *os.File, dest, kin
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 400))
+		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
 	}
 	return nil
 }

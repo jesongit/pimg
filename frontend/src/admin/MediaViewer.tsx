@@ -100,7 +100,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     if(!enabled||requestedRef.current&&stage!=="error")return;
     requestedRef.current=true;playNext.current=video;setRequested(true);setAttempt(value=>value+1);
   };
-  const interactions=useMediaInteractions({mediaKey:`${file.id}:${partIndex}:${compatible}`,video,fullscreenImages:true,toolbar:true,enabled,active:interactionActive,source,videoElement,stageElement,onRequestPlay:requestPlay,onPrev,onNext});
+  const interactions=useMediaInteractions({mediaKey:`${file.id}:${partIndex}:${compatible}`,video,fullscreenImages:true,toolbar:true,enabled,active:interactionActive,source,videoElement,stageElement,onRequestPlay:requestPlay,onPrev,onNext,onToggleMute:video?()=>toggleMute():undefined});
   const zoom=useImageZoom({mediaKey:file.id,enabled:!video&&enabled&&!!(source||preview&&!previewFailed),active:interactionActive,stage:stageElement});
   useLayoutEffect(()=>{zoom.constrain()},[source,visible,previewAttempt,zoom.constrain]);
   useEffect(()=>{setPosition(0);setDuration(0);setRate(1)},[file.id,partIndex,source]);
@@ -183,6 +183,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     const next=!muted,element=videoElement.current;
     if(element){if(!next&&element.volume===0)element.volume=1;element.muted=next}
     setMuted(next);
+    if(next)interactions.announce("已静音");else interactions.announce("已开启声音");
   };
   const cycleRate=()=>{
     interactions.stop();const element=videoElement.current;if(!element)return;
@@ -212,7 +213,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
       {enabled && source && (video ? <video ref={videoElement} className={`media-visual${visible ? "" : " original-pending"}`} key={source} src={source} muted={muted} playsInline preload="auto" poster={preview || undefined} onLoadedData={ready} onDurationChange={event=>setDuration(Number.isFinite(event.currentTarget.duration)?event.currentTarget.duration:0)} onTimeUpdate={event=>setPosition(event.currentTarget.currentTime)} onRateChange={event=>setRate(event.currentTarget.playbackRate)} onVolumeChange={event=>setMuted(event.currentTarget.muted||event.currentTarget.volume===0)} onError={() => void failed()} onEnded={() => { if (partIndex + 1 < parts.length) choosePart(partIndex + 1, true); }} /> : <img className={`media-visual${visible ? "" : " original-pending"}`} src={source} alt={file.name} onLoad={ready} onError={() => void failed()} />)}
       {interactions.overlay}
       {video&&<div className="media-progress-edge" style={{"--media-progress":`${duration>0?Math.min(100,position/duration*100):0}%`} as CSSProperties}>
-        <input type="range" aria-label="视频进度" aria-valuetext={`${mediaTime(position)} / ${mediaTime(duration||file.duration)}`} min="0" max={duration||1} step="0.1" value={Math.min(position,duration||1)} disabled={!videoReady||!duration||!interactionActive} onChange={event=>interactions.seek(0,Number(event.target.value))}/>
+        <input type="range" aria-label="视频进度" aria-valuetext={`${mediaTime(position)} / ${mediaTime(duration||file.duration)}`} min="0" max={duration||1} step="0.1" value={Math.min(position,duration||1)} disabled={!videoReady||!duration||!interactionActive} onChange={event=>interactions.seek(0,Number(event.target.value))} onPointerUp={event=>event.currentTarget.blur()} />
       </div>}
       {loading && <MediaLoading label={phase} percent={stage === "preparing" && preparationPhase !== "queued" || stage === "loading" && !video ? percent : undefined}/>}
     </div>
