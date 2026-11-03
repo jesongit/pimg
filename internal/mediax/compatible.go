@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // MakeCompatible only writes a disposable view. It never replaces an archive.
@@ -87,46 +88,75 @@ func MakeCompatibleFileStream(ctx context.Context, source *os.File, dest, mode s
 	if err != nil {
 		return err
 	}
-	output, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".part.*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(output.Name())
-	args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1", "-i", sourcePath}
-	args = append(args, compatibleArgs(info, mode, caps)...)
-	args = append(args, "-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", "pipe:1")
-	cmd := command("ffmpeg", args...)
-	var diagnostic limitedVideoDiagnostic
-	cmd.Stderr = &diagnostic
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	_, copyErr := io.Copy(io.MultiWriter(output, client), stdout)
-	// A client disconnect must not leave a truncated cache behind: stop ffmpeg
-	// before judging the copy result.
-	if copyErr != nil {
-		_ = cmd.Process.Kill()
-	}
-	err = errors.Join(copyErr, cmd.Wait())
-	if err == nil {
-		err = output.Sync()
-	}
-	// Close before renaming: an open handle blocks the rename on Windows.
-	if closeErr := output.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	var lastErr error
+	attempts := compatibleAttempts(info, mode, caps)
+	for i, attempt := range attempts {
+		output, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".part.*")
+		if err != nil {
+			return err
+		}
+		sent := &byteCounter{w: client}
+		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1"}
+		args = append(args, attempt.globals...)
+		args = append(args, "-i", sourcePath)
+		args = append(args, attempt.args...)
+		args = append(args, "-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", "pipe:1")
+		cmd := command("ffmpeg", args...)
+		var diagnostic limitedVideoDiagnostic
+		cmd.Stderr = &diagnostic
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			output.Close()
+			return err
+		}
+		if err = cmd.Start(); err != nil {
+			output.Close()
+			return err
+		}
+		_, copyErr := io.Copy(io.MultiWriter(output, sent), stdout)
+		// A client disconnect must not leave a truncated cache behind: stop ffmpeg
+		// before judging the copy result.
+		if copyErr != nil {
+			_ = cmd.Process.Kill()
+		}
+		err = errors.Join(copyErr, cmd.Wait())
+		if err == nil {
+			err = output.Sync()
+		}
+		// Close before renaming: an open handle blocks the rename on Windows.
+		if closeErr := output.Close(); err == nil {
+			err = closeErr
+		}
+		if err == nil {
+			// Only a fully converted file may appear under the cache name.
+			return os.Rename(output.Name(), dest)
+		}
+		os.Remove(output.Name())
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// A failed strategy may only fall back to the next one while nothing
+		// reached the client yet.
+		if i+1 < len(attempts) && sent.n == 0 {
+			lastErr = fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
+			continue
+		}
 		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
 	}
-	// Only a fully converted file may appear under the cache name.
-	return os.Rename(output.Name(), dest)
+	return lastErr
+}
+
+// byteCounter counts bytes that reached the client, so a strategy that failed
+// before its first output byte can safely fall back to the next one.
+type byteCounter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *byteCounter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func makeCompatible(ctx context.Context, source string, file *os.File, dest, kind, mode string, caps BrowserCaps, progress func(float64)) error {
@@ -152,58 +182,92 @@ func makeCompatible(ctx context.Context, source string, file *os.File, dest, kin
 	if err != nil {
 		return err
 	}
-	args = append(args, compatibleArgs(info, mode, caps)...)
-	args = append(args, "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", dest)
-	cmd := command("ffmpeg", args...)
-	var diagnostic limitedVideoDiagnostic
-	cmd.Stderr = &diagnostic
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	scan := bufio.NewScanner(stdout)
-	for scan.Scan() {
-		key, value, _ := strings.Cut(scan.Text(), "=")
-		if key == "out_time_us" && progress != nil {
-			micros, _ := strconv.ParseFloat(value, 64)
-			progress(math.Max(0, math.Min(0.99, micros/1e6/info.Duration)))
+	var lastErr error
+	for _, attempt := range compatibleAttempts(info, mode, caps) {
+		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1"}
+		args = append(args, attempt.globals...)
+		args = append(args, "-i", source)
+		args = append(args, attempt.args...)
+		args = append(args, "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", dest)
+		cmd := command("ffmpeg", args...)
+		var diagnostic limitedVideoDiagnostic
+		cmd.Stderr = &diagnostic
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
 		}
-	}
-	if scan.Err() != nil {
-		_ = cmd.Process.Kill()
-	}
-	if err = errors.Join(scan.Err(), cmd.Wait()); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if err = cmd.Start(); err != nil {
+			return err
 		}
-		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
+		scan := bufio.NewScanner(stdout)
+		for scan.Scan() {
+			key, value, _ := strings.Cut(scan.Text(), "=")
+			if key == "out_time_us" && progress != nil {
+				micros, _ := strconv.ParseFloat(value, 64)
+				progress(math.Max(0, math.Min(0.99, micros/1e6/info.Duration)))
+			}
+		}
+		if scan.Err() != nil {
+			_ = cmd.Process.Kill()
+		}
+		if err = errors.Join(scan.Err(), cmd.Wait()); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// A failed strategy (e.g. GPU init) falls back to the next one.
+			lastErr = fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
+			continue
+		}
+		return nil
 	}
-	return nil
+	return lastErr
 }
 
-// compatibleArgs maps the video into the browser target. A supported picture is
-// copied; only genuinely undecodable input is re-encoded, and the source
-// resolution is preserved instead of a fixed downscaled ceiling.
-func compatibleArgs(info VideoInfo, mode string, caps BrowserCaps) []string {
-	args := []string{"-map", "0:v:0", "-map", "0:a:0?"}
+// encodeAttempt is one encoding strategy: extra global options plus the stream
+// mapping, filter and codec options that follow the input.
+type encodeAttempt struct {
+	globals []string
+	args    []string
+}
+
+// hardwareEncode probes the VAAPI render node once: an Intel iGPU takes the
+// x264-equivalent encode work and keeps 4K/HDR transcoding near realtime.
+// Missing device (or non-Linux) keeps the software encoder.
+var hardwareEncode = sync.OnceValue(func() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	_, err := os.Stat("/dev/dri/renderD128")
+	return err == nil
+})
+
+// compatibleAttempts lists the encoding strategies in fallback order. A
+// supported picture is copied; only genuinely undecodable input is re-encoded,
+// and the source resolution is preserved instead of a downscaled ceiling.
+func compatibleAttempts(info VideoInfo, mode string, caps BrowserCaps) []encodeAttempt {
+	maps := []string{"-map", "0:v:0", "-map", "0:a:0?"}
 	if mode == "remux" {
-		return append(args, "-c", "copy")
+		return []encodeAttempt{{args: append(maps, "-c", "copy")}}
 	}
 	videoCopy := !info.HDR && info.AllVideoSupported(caps)
 	audioCopy := info.AllAudioSupported(caps)
 	if videoCopy && !audioCopy {
 		// An unsupported audio track does not require re-encoding the picture.
-		args = append(args, "-c:v", "copy", "-c:a", "aac", "-b:a", "128k")
-		return args
+		return []encodeAttempt{{args: append(maps, "-c:v", "copy", "-c:a", "aac", "-b:a", "128k")}}
 	}
 	filter := "pad=ceil(iw/2)*2:ceil(ih/2)*2"
 	if info.HDR {
 		filter = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv," + filter
 	}
-	args = append(args, "-vf", filter, "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k")
-	return args
+	audio := []string{"-c:a", "aac", "-b:a", "128k"}
+	software := encodeAttempt{args: append(append(append([]string{}, maps...), "-vf", filter, "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"), audio...)}
+	if !hardwareEncode() {
+		return []encodeAttempt{software}
+	}
+	hardware := encodeAttempt{
+		globals: []string{"-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va"},
+		args:    append(append(append([]string{}, maps...), "-vf", filter+",format=nv12,hwupload", "-c:v", "h264_vaapi", "-rc_mode", "CQP", "-qp", "23"), audio...),
+	}
+	return []encodeAttempt{hardware, software}
 }
 
