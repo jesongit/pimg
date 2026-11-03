@@ -269,6 +269,8 @@ export interface AvailableLink {
 export interface OriginalView {
 	part?: MediaPart;
 	compatible?: string;
+	/** Real total seconds of the probed video, for a stable streaming progress bar. */
+	duration?: number;
   status: "loading" | "ready" | "failed";
   loaded: number;
   total: number;

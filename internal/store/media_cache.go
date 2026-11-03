@@ -35,11 +35,54 @@ type originalJob struct {
 	done   chan struct{}
 }
 
-// browserStream single-flights one live conversion feeding an HTTP response.
-// Later openers wait for done and then read the completed cache file.
+// browserStream tracks one in-flight conversion writing a fragmented MP4 into
+// a temporary building file. Viewers pump that growing file independently, so
+// a stalled or closed client can never block the encoder; when the last viewer
+// leaves, the conversion is cancelled. The finished building file is renamed
+// idempotently by whichever caller arrives last, because a pump handle on
+// Windows would otherwise block the rename.
 type browserStream struct {
-	done chan struct{}
-	err  error
+	mu      sync.Mutex
+	temp    string
+	done    chan struct{}
+	err     error
+	cancel  context.CancelFunc
+	pumps   int
+	renamed bool
+}
+
+// finalize moves the completed building file to its cache name exactly once.
+func (j *browserStream) finalize(dest string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.renamed {
+		return nil
+	}
+	err := os.Rename(j.temp, dest)
+	if err != nil {
+		if _, statErr := os.Stat(dest); statErr == nil {
+			err = nil // Another caller finished the rename first.
+		}
+	}
+	if err == nil {
+		j.renamed = true
+	}
+	return err
+}
+
+func (j *browserStream) addPump() {
+	j.mu.Lock()
+	j.pumps++
+	j.mu.Unlock()
+}
+
+// removePump returns true when this was the last viewer and the conversion is
+// still running, so the caller must cancel it.
+func (j *browserStream) removePump() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.pumps--
+	return j.pumps <= 0
 }
 type OriginalView struct {
 	Status    string `json:"status"`

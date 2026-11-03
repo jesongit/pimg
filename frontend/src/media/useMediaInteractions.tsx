@@ -13,6 +13,8 @@ type Options={
   videoElement:RefObject<HTMLVideoElement>;stageElement:RefObject<HTMLDivElement>;onRequestPlay:()=>void;
   onPrev?:()=>void;onNext?:()=>void;
   onToggleMute?:()=>void;
+  /** Stable total seconds for growing fragmented streams; falls back to the element. */
+  totalDuration?:number;
 };
 type Gesture={id:number;x:number;y:number;width:number;mode:"pending"|"seek"|"ignored";start:number;target:number;applied:number;wasPlaying:boolean};
 const clamp=(value:number,min:number,max:number)=>Math.max(min,Math.min(max,value));
@@ -23,6 +25,9 @@ export const MEDIA_STEPS={normal:5,fast:30,slow:1,forwardRate:2,fastRate:4,slowR
 /** Horizontal seeking never pauses playback. The surrounding dock owns its input. */
 export default function useMediaInteractions(options:Options){
   const latest=useRef(options);latest.current=options;
+  // A fragmented stream still converting reports a growing element duration;
+  // the probed total keeps seeking and the progress bar anchored to the file.
+  const total=useCallback(()=>{const element=latest.current.videoElement.current;const probed=latest.current.totalDuration||0;const value=Number.isFinite(probed)&&probed>0?probed:element?.duration??0;return Number.isFinite(value)&&value>0?value:0},[]);
   const pad=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),pointers=useRef(new Set<number>());
   const hide=useRef<ReturnType<typeof setTimeout>>();
   const alive=useRef(true),playPending=useRef(false),cancelClick=useRef(false),tap=useRef<{at:number;x:number;y:number}|null>(null);
@@ -50,18 +55,19 @@ export default function useMediaInteractions(options:Options){
   },[announce]);
   const seek=useCallback((seconds:number,target?:number)=>{
     const element=latest.current.videoElement.current;
-    if(!element||!latest.current.source||!Number.isFinite(element.duration)||element.duration<=0){announce("先播放视频，再调整进度");return null}
+    const totalSeconds=total();
+    if(!element||!latest.current.source||totalSeconds<=0){announce("先播放视频，再调整进度");return null}
     // Accumulate a target while decoding is busy; never flood the decoder with seeks.
-    const next=clamp(target??element.currentTime+seconds,0,Math.max(0,element.duration-.05));
+    const next=clamp(target??element.currentTime+seconds,0,Math.max(0,totalSeconds-.05));
     try{element.currentTime=next;return next}catch{return null}
-  },[announce]);
+  },[announce,total]);
   const accelerate=useCallback((multiplier:number)=>{
     const current=latest.current,element=current.videoElement.current;
-    if(!element||!current.source||!Number.isFinite(element.duration)||element.duration<=0){announce("先播放视频，再按住加速");return false}
+    if(!element||!current.source||total()<=0){announce("先播放视频，再按住加速");return false}
     const rate=acceleration.current.start(element,multiplier,()=>announce("无法加速播放，请先播放视频后重试"));
     if(rate!==null)announce(`${rate.toFixed(2).replace(/0$/,"")}× 加速播放`,true);
     return rate!==null;
-  },[announce]);
+  },[announce,total]);
   const volume=useCallback((value:number)=>{
     const element=latest.current.videoElement.current;
     if(!element){announce("先播放视频，再调整音量");return}
@@ -87,11 +93,11 @@ export default function useMediaInteractions(options:Options){
     const element=latest.current.videoElement.current;
     if(g.mode==="pending"&&Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)*1.15){
       cancelClick.current=true;tap.current=null;
-      if(!element||!latest.current.source||!Number.isFinite(element.duration)||element.duration<=0){stop(false);announce("先播放视频，再调整进度");return}
+      if(!element||!latest.current.source||total()<=0){stop(false);announce("先播放视频，再调整进度");return}
       g.mode="seek";g.start=element.currentTime;g.applied=g.start;g.wasPlaying=!element.paused;
     }
     if(g.mode!=="seek"||!element)return;
-    g.target=clamp(g.start+dx/Math.max(1,g.width)*Math.min(120,element.duration),0,Math.max(0,element.duration-.05));
+    g.target=clamp(g.start+dx/Math.max(1,g.width)*Math.min(120,total()),0,Math.max(0,total()-.05));
     if(!element.seeking){g.applied=g.target;seek(0,g.target)}
     if(g.wasPlaying&&element.paused&&!element.ended)void element.play().catch(()=>announce("已定位，双击或按空格继续播放"));
     announce(`${dx>=0?"快进":"快退"} · ${time(g.target)}`,true);

@@ -165,12 +165,13 @@ var ErrBrowserViewBusy = errors.New("正在准备的文件较多，请稍后重�
 
 // StreamBrowserCompatible plays a compatible video without waiting for the
 // whole conversion. When the cached file already exists it is returned for
-// normal range serving. Otherwise the caller becomes the stream leader: the
-// conversion writes fragmented MP4 to both the cache and w while this call
-// blocks, then returns (nil, true, nil) once the client stream is complete.
-// The streamed flag marks that response bytes may already be written, so late
-// failures can only abort the body. Waiting openers get the finished cache
-// file instead.
+// normal range serving. Otherwise the conversion writes a fragmented MP4 into
+// a building file and w is fed from that growing file, so the encoder can
+// never be blocked by a slow or vanished client; every viewer pumps the same
+// building file independently. When the last viewer leaves before completion,
+// the conversion is cancelled. This call returns once the client stream is
+// complete; streamed marks that response bytes were already written, so late
+// failures can only abort the body.
 func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode string, caps mediax.BrowserCaps, w io.Writer) (file *os.File, streamed bool, err error) {
 	source, entry, openErr := s.OpenBrowserSource(p, version)
 	if openErr != nil {
@@ -191,86 +192,169 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 		cache.mu.Unlock()
 		return nil, false, errors.New("服务正在停止")
 	}
-	if existing := cache.streams[key]; existing != nil {
-		cache.mu.Unlock()
+	job := cache.streams[key]
+	if job != nil {
 		select {
-		case <-ctx.Done():
-			return nil, false, ctx.Err()
-		case <-existing.done:
-		}
-		if existing.err != nil {
-			return nil, false, existing.err
-		}
-		cached, e := s.openBrowserCompatibleFor(entry, mode, fp)
-		if e != nil {
+		case <-job.done:
+			// The previous conversion finished (or failed) while this request
+			// was arriving; serve its result or surface the failure.
+			cache.mu.Unlock()
+			if job.err == nil {
+				if err := job.finalize(s.browserCompatiblePathFor(entry, mode, fp)); err == nil {
+					if cached, e := s.openBrowserCompatibleFor(entry, mode, fp); e == nil {
+						return cached, false, nil
+					}
+				}
+			} else {
+				return nil, false, job.err
+			}
 			return nil, false, errors.New("兼容版本已生成，请重新打开文件")
+		default:
 		}
-		return cached, false, nil
 	}
-	if len(cache.streams) >= 8 {
+	if job == nil && len(cache.streams) >= 8 {
 		cache.mu.Unlock()
 		return nil, false, ErrBrowserViewBusy
 	}
-	leader := &browserStream{done: make(chan struct{})}
-	cache.streams[key] = leader
-	cache.mu.Unlock()
-
-	defer func() {
-		cache.mu.Lock()
-		delete(cache.streams, key)
+	if job == nil {
+		dest := s.browserCompatiblePathFor(entry, mode, fp)
+		convCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+		job = &browserStream{temp: dest + ".building", done: make(chan struct{}), cancel: cancel}
+		cache.streams[key] = job
 		cache.mu.Unlock()
-		close(leader.done)
-	}()
-	cache.streamSlots <- struct{}{}
-	defer func() { <-cache.streamSlots }()
-	if err = os.MkdirAll(s.originalCacheDir(), 0700); err != nil {
-		leader.err = err
-		return nil, false, err
+		job.addPump()
+		go func() {
+			conversionErr := func() error {
+				cache.streamSlots <- struct{}{}
+				defer func() { <-cache.streamSlots }()
+				if err := os.MkdirAll(s.originalCacheDir(), 0700); err != nil {
+					return err
+				}
+				// Linux subprocesses inherit the validated read-only descriptor,
+				// so a multi-GB source converts without a full copy first.
+				convErr := mediax.MakeCompatibleFileFragments(convCtx, source, job.temp, mode, caps)
+				if convErr != nil {
+					os.Remove(job.temp)
+				}
+				if convErr != nil && convCtx.Err() == nil && s.Log != nil {
+					s.Log.Warn("流式兼容转换失败", "mode", mode, "file", entry.Name, "err", convErr.Error())
+				}
+				return convErr
+			}()
+			job.mu.Lock()
+			job.err = conversionErr
+			job.mu.Unlock()
+			cache.mu.Lock()
+			if conversionErr != nil {
+				delete(cache.streams, key)
+			}
+			cache.mu.Unlock()
+			close(job.done)
+		}()
+	} else {
+		job.addPump()
+		cache.mu.Unlock()
 	}
-	dest := s.browserCompatiblePathFor(entry, mode, fp)
-	// From here the response body may already be flowing; any failure can only
-	// abort the stream and let the video element try the next playback mode.
 	streamed = true
-	// Linux subprocesses inherit the validated read-only descriptor, so a
-	// multi-GB source streams without a full copy first.
-	if err = mediax.MakeCompatibleFileStream(ctx, source, dest, mode, caps, w); err != nil {
-		if s.Log != nil && ctx.Err() == nil {
-			s.Log.Warn("流式兼容转换失败", "mode", mode, "file", entry.Name, "err", err.Error())
-		}
-		leader.err = err
-		return nil, true, err
+	sent, pumpErr := s.pumpBrowserStream(ctx, w, job)
+	if job.removePump() {
+		job.cancel()
 	}
-	// The leader has already streamed the response body; followers may serve
-	// the completed cache file.
-	return nil, true, nil
+	<-job.done
+	if pumpErr == nil {
+		if err := job.finalize(s.browserCompatiblePathFor(entry, mode, fp)); err != nil {
+			return nil, true, err
+		}
+		return nil, true, nil
+	}
+	if !sent {
+		return nil, false, pumpErr
+	}
+	return nil, true, pumpErr
+}
+
+// pumpBrowserStream feeds w from the growing building file until the viewer
+// disconnects or the conversion finishes and the file has been fully sent.
+func (s *Service) pumpBrowserStream(ctx context.Context, w io.Writer, job *browserStream) (sent bool, err error) {
+	var f *os.File
+	for i := 0; i < 100 && f == nil; i++ {
+		f, _ = os.Open(job.temp)
+		if f == nil {
+			select {
+			case <-ctx.Done():
+				return false, ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
+	if f == nil {
+		return false, errors.New("兼容版本输出尚未就绪")
+	}
+	defer f.Close()
+	var offset int64
+	buf := make([]byte, 128<<10)
+	for {
+		n, readErr := f.ReadAt(buf, offset)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return offset > 0, writeErr
+			}
+			sent, offset = sent || n > 0, offset+int64(n)
+		}
+		if readErr == io.EOF || readErr == nil && n == 0 {
+			job.mu.Lock()
+			var finished bool
+			var jobErr error
+			select {
+			case <-job.done:
+				finished, jobErr = true, job.err
+			default:
+			}
+			job.mu.Unlock()
+			if finished {
+				return sent, jobErr
+			}
+			select {
+			case <-ctx.Done():
+				return sent, ctx.Err()
+			case <-time.After(150 * time.Millisecond):
+			}
+			continue
+		}
+		if readErr != nil && readErr != io.EOF {
+			return sent, readErr
+		}
+	}
 }
 
 // Probe streams when opening a video, including audio: a browser can otherwise
 // render the picture while silently dropping an unsupported audio track. caps
 // reports what the requesting browser decodes; the zero value is the strict
-// universal baseline.
-func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, caps mediax.BrowserCaps) (string, error) {
+// universal baseline. The returned duration is the source video's real total,
+// which the player uses as a stable progress denominator while a fragmented
+// stream is still growing.
+func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, caps mediax.BrowserCaps) (string, float64, error) {
 	source, entry, err := s.OpenBrowserSource(p, version)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer source.Close()
 	if entry.Kind != "video" {
-		return "", nil
+		return "", 0, nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	info, err := mediax.InspectVideo(probeCtx, source.Name())
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if !info.HDR && info.SupportedMP4(entry.Ext, caps) {
-		return "", nil
+		return "", info.Duration, nil
 	}
 	if !info.HDR && info.AllVideoSupported(caps) && info.AllAudioSupported(caps) {
-		return "remux", nil
+		return "remux", info.Duration, nil
 	}
-	return "transcode", nil
+	return "transcode", info.Duration, nil
 }
 
 func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode string, retry bool, caps mediax.BrowserCaps) (OriginalView, error) {

@@ -71,6 +71,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   const [partIndex, setPartIndex] = useState(0), [compatible, setCompatible] = useState("");
   const objectURL = useRef(""), dock = useRef<HTMLDivElement>(null), videoElement = useRef<HTMLVideoElement>(null),stageElement=useRef<HTMLDivElement>(null);
   const activeSignal = useRef<AbortSignal>(), heicTried = useRef(false), playNext = useRef(autoLoad && video), expectedTime = useRef(0);
+  const probeDuration = useRef(0);
   const requestedRef=useRef(requested);requestedRef.current=requested;
   const parts = file.media_parts || [];
   const preview = !sourceAdapter && enabled && (file.has_thumb || file.kind === "image" || file.kind === "video") ? api.url(`/files/${encodeURIComponent(file.id)}/content?kind=thumb&v=${previewAttempt}`) : "";
@@ -100,7 +101,10 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     if(!enabled||requestedRef.current&&stage!=="error")return;
     requestedRef.current=true;playNext.current=video;setRequested(true);setAttempt(value=>value+1);
   };
-  const interactions=useMediaInteractions({mediaKey:`${file.id}:${partIndex}:${compatible}`,video,fullscreenImages:true,toolbar:true,enabled,active:interactionActive,source,videoElement,stageElement,onRequestPlay:requestPlay,onPrev,onNext,onToggleMute:video?()=>toggleMute():undefined});
+  // A fragmented stream still converting reports a growing element duration;
+  // the server-probed total keeps the progress bar anchored to the real file.
+  const totalDuration = compatible && probeDuration.current > 0 ? probeDuration.current : Number.isFinite(duration) && duration > 0 ? duration : (file.duration || 0);
+  const interactions=useMediaInteractions({mediaKey:`${file.id}:${partIndex}:${compatible}`,video,fullscreenImages:true,toolbar:true,enabled,active:interactionActive,source,videoElement,stageElement,onRequestPlay:requestPlay,onPrev,onNext,onToggleMute:video?()=>toggleMute():undefined,totalDuration});
   const zoom=useImageZoom({mediaKey:file.id,enabled:!video&&enabled&&!!(source||preview&&!previewFailed),active:interactionActive,stage:stageElement});
   useLayoutEffect(()=>{zoom.constrain()},[source,visible,previewAttempt,zoom.constrain]);
   useEffect(()=>{setPosition(0);setDuration(0);setRate(1)},[file.id,partIndex,source]);
@@ -112,7 +116,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
     setRequested(false);setVisible(false);setSource("");setStage("idle");
   },[enabled]);
   useEffect(() => {
-    setRequested(autoLoad || !video && !!file.local_ready); setPartIndex(0); setCompatible(""); setVisible(false); setSource(""); heicTried.current = false; playNext.current = autoLoad && video;
+    setRequested(autoLoad || !video && !!file.local_ready); setPartIndex(0); setCompatible(""); setVisible(false); setSource(""); heicTried.current = false; playNext.current = autoLoad && video; probeDuration.current = 0;
   }, [file.id]);
   useEffect(() => {
     const element = dock.current; if (!element) return;
@@ -129,6 +133,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
       try {
         const result = sourceAdapter ? await sourceAdapter.prepare(compatible, retry, controller.signal) : await api.post<OriginalView>(`/files/${encodeURIComponent(file.id)}/original`, { retry, ...(file.media_version === 2 ? { part: partIndex, compatible } : {}) });
         if (stopped) return;
+        if (result.duration && result.duration > 0) probeDuration.current = result.duration;
         setPreparationPhase(result.phase || "");
         if (sourceAdapter && result.compatible && result.compatible !== compatible) { setCompatible(result.compatible); return; }
         if (result.status === "failed") { if(video && compatible === "remux") { setCompatible("transcode"); return; } throw new Error(result.error || "原件加载失败，请重试。"); }
@@ -212,8 +217,8 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
       {!visible && (!preview || previewFailed) && !autoLoad && <div className="preview-message"><p>{blocked || (file.archive_state === "failed" ? "归档失败，请重试归档" : file.archive_state !== "done" ? "归档中…" : previewFailed ? "预览图暂时无法加载" : "暂无预览图，可按需查看原件")}</p>{previewFailed && enabled && <button className="btn" onClick={() => { setPreviewFailed(false); setPreviewAttempt(value => value + 1); }}>重试预览图</button>}</div>}
       {enabled && source && (video ? <video ref={videoElement} className={`media-visual${visible ? "" : " original-pending"}`} key={source} src={source} muted={muted} playsInline preload="auto" poster={preview || undefined} onLoadedData={ready} onDurationChange={event=>setDuration(Number.isFinite(event.currentTarget.duration)?event.currentTarget.duration:0)} onTimeUpdate={event=>setPosition(event.currentTarget.currentTime)} onRateChange={event=>setRate(event.currentTarget.playbackRate)} onVolumeChange={event=>setMuted(event.currentTarget.muted||event.currentTarget.volume===0)} onError={() => void failed()} onEnded={() => { if (partIndex + 1 < parts.length) choosePart(partIndex + 1, true); }} /> : <img className={`media-visual${visible ? "" : " original-pending"}`} src={source} alt={file.name} onLoad={ready} onError={() => void failed()} />)}
       {interactions.overlay}
-      {video&&<div className="media-progress-edge" style={{"--media-progress":`${duration>0?Math.min(100,position/duration*100):0}%`} as CSSProperties}>
-        <input type="range" aria-label="视频进度" aria-valuetext={`${mediaTime(position)} / ${mediaTime(duration||file.duration)}`} min="0" max={duration||1} step="0.1" value={Math.min(position,duration||1)} disabled={!videoReady||!duration||!interactionActive} onChange={event=>interactions.seek(0,Number(event.target.value))} onPointerUp={event=>event.currentTarget.blur()} />
+      {video&&<div className="media-progress-edge" style={{"--media-progress":`${totalDuration>0?Math.min(100,position/totalDuration*100):0}%`} as CSSProperties}>
+        <input type="range" aria-label="视频进度" aria-valuetext={`${mediaTime(position)} / ${mediaTime(totalDuration)}`} min="0" max={totalDuration||1} step="0.1" value={Math.min(position,totalDuration||1)} disabled={!videoReady||!totalDuration||!interactionActive} onChange={event=>interactions.seek(0,Number(event.target.value))} onPointerUp={event=>event.currentTarget.blur()} />
       </div>}
       {loading && <MediaLoading label={phase} percent={stage === "preparing" && preparationPhase !== "queued" || stage === "loading" && !video ? percent : undefined}/>}
     </div>

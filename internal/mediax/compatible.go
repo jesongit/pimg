@@ -53,7 +53,12 @@ func MakeCompatibleFile(ctx context.Context, source *os.File, dest, mode string,
 // for the whole conversion. Linux subprocesses inherit the validated read-only
 // descriptor; elsewhere the validated bytes are snapshotted once, because the
 // handle's name is root-relative and unusable by a subprocess.
-func MakeCompatibleFileStream(ctx context.Context, source *os.File, dest, mode string, caps BrowserCaps, client io.Writer) error {
+// MakeCompatibleFileFragments converts into a fragmented MP4 written directly
+// to dest (the caller supplies a temporary path and renames on success).
+// Fragmented output starts at the first keyframe, so a reader can follow the
+// file while conversion runs. Encoding strategies fall back in order: VAAPI
+// hardware first when a render node exists, then software x264.
+func MakeCompatibleFileFragments(ctx context.Context, source *os.File, dest, mode string, caps BrowserCaps) error {
 	if mode != "remux" && mode != "transcode" {
 		return errors.New("此文件不能流式生成兼容查看版本")
 	}
@@ -90,73 +95,21 @@ func MakeCompatibleFileStream(ctx context.Context, source *os.File, dest, mode s
 	}
 	var lastErr error
 	attempts := compatibleAttempts(info, mode, caps)
-	for i, attempt := range attempts {
-		output, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".part.*")
-		if err != nil {
-			return err
-		}
-		sent := &byteCounter{w: client}
+	for _, attempt := range attempts {
 		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1"}
 		args = append(args, attempt.globals...)
 		args = append(args, "-i", sourcePath)
 		args = append(args, attempt.args...)
-		args = append(args, "-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", "pipe:1")
-		cmd := command("ffmpeg", args...)
-		var diagnostic limitedVideoDiagnostic
-		cmd.Stderr = &diagnostic
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			output.Close()
-			return err
+		args = append(args, "-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", dest)
+		if err = runVideoCommand(ctx, args); err == nil {
+			return nil
 		}
-		if err = cmd.Start(); err != nil {
-			output.Close()
-			return err
-		}
-		_, copyErr := io.Copy(io.MultiWriter(output, sent), stdout)
-		// A client disconnect must not leave a truncated cache behind: stop ffmpeg
-		// before judging the copy result.
-		if copyErr != nil {
-			_ = cmd.Process.Kill()
-		}
-		err = errors.Join(copyErr, cmd.Wait())
-		if err == nil {
-			err = output.Sync()
-		}
-		// Close before renaming: an open handle blocks the rename on Windows.
-		if closeErr := output.Close(); err == nil {
-			err = closeErr
-		}
-		if err == nil {
-			// Only a fully converted file may appear under the cache name.
-			return os.Rename(output.Name(), dest)
-		}
-		os.Remove(output.Name())
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// A failed strategy may only fall back to the next one while nothing
-		// reached the client yet.
-		if i+1 < len(attempts) && sent.n == 0 {
-			lastErr = fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
-			continue
-		}
-		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
+		lastErr = err
 	}
 	return lastErr
-}
-
-// byteCounter counts bytes that reached the client, so a strategy that failed
-// before its first output byte can safely fall back to the next one.
-type byteCounter struct {
-	w io.Writer
-	n int64
-}
-
-func (c *byteCounter) Write(p []byte) (int, error) {
-	n, err := c.w.Write(p)
-	c.n += int64(n)
-	return n, err
 }
 
 func makeCompatible(ctx context.Context, source string, file *os.File, dest, kind, mode string, caps BrowserCaps, progress func(float64)) error {
