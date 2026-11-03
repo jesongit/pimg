@@ -5,6 +5,30 @@ export type BrowserEntry = {
   ext: string; kind: string; mime: string; version: string;
   created_at: number; modified_at: number; relative_path: string; importable: boolean;
 };
+
+// What this browser can decode inside an MP4 container, from canPlayType.
+// Absent support simply falls back to the server-side compatibility view.
+export type BrowserPlaybackCaps = {
+  hevc8: boolean; hevc10: boolean; av1: boolean; vp9: boolean;
+  mp3: boolean; opus: boolean; ac3: boolean; flac: boolean;
+};
+let probedCaps: BrowserPlaybackCaps | undefined;
+export function browserPlaybackCaps(): BrowserPlaybackCaps {
+  if (probedCaps) return probedCaps;
+  const probe = document.createElement("video");
+  const plays = (type: string) => !!probe.canPlayType(type);
+  probedCaps = {
+    hevc8: plays('video/mp4; codecs="hvc1.1.6.L120.B0"'),
+    hevc10: plays('video/mp4; codecs="hvc1.2.4.L153.B0"'),
+    av1: plays('video/mp4; codecs="av01.0.08M.08"'),
+    vp9: plays('video/mp4; codecs="vp09.00.10.08"'),
+    mp3: plays('video/mp4; codecs="mp3"'),
+    opus: plays('audio/mp4; codecs="opus"'),
+    ac3: plays('audio/mp4; codecs="ec-3"') || plays('audio/mp4; codecs="ac-3"'),
+    flac: plays('audio/mp4; codecs="flac"'),
+  };
+  return probedCaps;
+}
 export type BrowserLocation = { path: string; name: string };
 export type BrowserListing = {
   path: string; parent: string; breadcrumbs: BrowserLocation[];
@@ -43,11 +67,13 @@ export async function prepareBrowserMedia(entry: BrowserEntry, compatible: strin
   }
   for (;;) {
     signal.throwIfAborted();
+    const caps = !compatible && entry.kind === "video" ? browserPlaybackCaps() : undefined;
     const response = await fetch(`${browserBase}/view`, {
       method: "POST", credentials: "same-origin", signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: entry.path, version: entry.version, compatible, retry,
-        native_hevc: !compatible && entry.kind === "video" && !!document.createElement("video").canPlayType('video/mp4; codecs="hvc1.1.6.L120.B0"'),
+        native_hevc: !!caps?.hevc8,
+        native: caps,
       }),
     });
     if (response.status === 429) { await pause(signal); continue; }

@@ -18,17 +18,28 @@ import (
 // Originals are disposable, verified plaintext. Upload work files and durable
 // album previews have separate directories and are never expired by this cache.
 type mediaCache struct {
-	mu     sync.Mutex
-	jobs   map[string]*originalJob
-	slots  chan struct{}
-	wg     sync.WaitGroup
-	closed bool
+	mu      sync.Mutex
+	jobs    map[string]*originalJob
+	streams map[string]*browserStream
+	slots   chan struct{}
+	// streamSlots keeps live client-facing conversions separate from the
+	// prepare budget so one long stream cannot block image preparation.
+	streamSlots chan struct{}
+	wg          sync.WaitGroup
+	closed      bool
 }
 type originalJob struct {
 	fileID string
 	view   OriginalView
 	cancel context.CancelFunc
 	done   chan struct{}
+}
+
+// browserStream single-flights one live conversion feeding an HTTP response.
+// Later openers wait for done and then read the completed cache file.
+type browserStream struct {
+	done chan struct{}
+	err  error
 }
 type OriginalView struct {
 	Status    string `json:"status"`
@@ -42,7 +53,7 @@ type OriginalView struct {
 }
 
 func newMediaCache() *mediaCache {
-	return &mediaCache{jobs: make(map[string]*originalJob), slots: make(chan struct{}, 2)}
+	return &mediaCache{jobs: make(map[string]*originalJob), streams: make(map[string]*browserStream), slots: make(chan struct{}, 2), streamSlots: make(chan struct{}, 1)}
 }
 func mediaKey(f *dbx.File) string { return sha256Hex([]byte(f.ID + "\x00" + f.SHA256)) }
 func (s *Service) originalCacheDir() string {

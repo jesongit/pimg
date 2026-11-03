@@ -25,6 +25,8 @@ type VideoInfo struct {
 	VideoStream                            int
 	VideoCodec, AudioCodec                 string
 	PixelFormat                            string
+	VideoCodecs, VideoPixFmts              []string
+	AudioCodecs                            []string
 	VideoStreams, AudioStreams             int
 	AllVideoCompatible, AllAudioCompatible bool
 	ExtraTracks                            bool
@@ -69,11 +71,14 @@ func inspectVideo(cmd *exec.Cmd) (VideoInfo, error) {
 		case "video":
 			info.HDR = info.HDR || s.ColorTransfer == "smpte2084" || s.ColorTransfer == "arib-std-b67"
 			info.VideoStreams++
+			info.VideoCodecs = append(info.VideoCodecs, s.CodecName)
+			info.VideoPixFmts = append(info.VideoPixFmts, s.PixFmt)
 			if s.CodecName != "h264" || (s.PixFmt != "yuv420p" && s.PixFmt != "yuvj420p") {
 				info.AllVideoCompatible = false
 			}
 		case "audio":
 			info.AudioStreams++
+			info.AudioCodecs = append(info.AudioCodecs, s.CodecName)
 			if s.CodecName != "aac" {
 				info.AllAudioCompatible = false
 			}

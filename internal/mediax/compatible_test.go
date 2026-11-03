@@ -80,7 +80,7 @@ func TestCompatibleReadOnlyDescriptorSurvivesPathReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	var seen []float64
-	if err = MakeCompatibleFile(t.Context(), file, dest, "remux", func(p float64) { seen = append(seen, p) }); err != nil {
+	if err = MakeCompatibleFile(t.Context(), file, dest, "remux", BrowserCaps{}, func(p float64) { seen = append(seen, p) }); err != nil {
 		t.Fatal(err)
 	}
 	if info, err := InspectVideo(t.Context(), dest); err != nil || !info.PlayableMP4("mp4") {
@@ -92,7 +92,7 @@ func TestCompatibleReadOnlyDescriptorSurvivesPathReplacement(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err = MakeCompatibleFile(ctx, file, dest, "remux", nil); err == nil {
+	if err = MakeCompatibleFile(ctx, file, dest, "remux", BrowserCaps{}, nil); err == nil {
 		t.Fatal("cancelled conversion succeeded")
 	}
 }

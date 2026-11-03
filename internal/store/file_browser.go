@@ -105,11 +105,21 @@ func (s *Service) OpenBrowserSource(p, version string) (*os.File, BrowserEntry, 
 }
 
 func (s *Service) browserCompatiblePath(entry BrowserEntry, mode string) string {
+	return s.browserCompatiblePathFor(entry, mode, "")
+}
+
+// browserCompatiblePathFor places a remux produced for a non-strict browser
+// capability set under a fingerprinted name: those outputs keep the original
+// HEVC/AV1/AC-3 streams and must never be served to a weaker browser.
+func (s *Service) browserCompatiblePathFor(entry BrowserEntry, mode, fp string) string {
 	ext := ".mp4"
 	if entry.Kind == "image" {
 		ext = ".png"
 	}
 	key := sha256Hex([]byte(entry.Path + "\x00" + entry.Version))
+	if mode == "remux" && fp != "" {
+		return filepath.Join(s.originalCacheDir(), "browser-"+key+"."+mode+"-"+fp+ext)
+	}
 	return filepath.Join(s.originalCacheDir(), "browser-"+key+"."+mode+ext)
 }
 
@@ -118,7 +128,11 @@ func validBrowserMode(entry BrowserEntry, mode string) bool {
 }
 
 func (s *Service) openBrowserCompatible(entry BrowserEntry, mode string) (*os.File, error) {
-	file, err := os.Open(s.browserCompatiblePath(entry, mode))
+	return s.openBrowserCompatibleFor(entry, mode, "")
+}
+
+func (s *Service) openBrowserCompatibleFor(entry BrowserEntry, mode, fp string) (*os.File, error) {
+	file, err := os.Open(s.browserCompatiblePathFor(entry, mode, fp))
 	if err != nil {
 		return nil, err
 	}
@@ -149,9 +163,90 @@ func (s *Service) OpenBrowserContent(p, version, mode string) (*os.File, Browser
 
 var ErrBrowserViewBusy = errors.New("正在准备的文件较多，请稍后重试")
 
+// StreamBrowserCompatible plays a compatible video without waiting for the
+// whole conversion. When the cached file already exists it is returned for
+// normal range serving. Otherwise the caller becomes the stream leader: the
+// conversion writes fragmented MP4 to both the cache and w while this call
+// blocks, then returns (nil, true, nil) once the client stream is complete.
+// The streamed flag marks that response bytes may already be written, so late
+// failures can only abort the body. Waiting openers get the finished cache
+// file instead.
+func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode string, caps mediax.BrowserCaps, w io.Writer) (file *os.File, streamed bool, err error) {
+	source, entry, openErr := s.OpenBrowserSource(p, version)
+	if openErr != nil {
+		return nil, false, openErr
+	}
+	defer source.Close()
+	if entry.Kind != "video" || !validBrowserMode(entry, mode) || mode == "" {
+		return nil, false, errors.New("查看方式与媒体类型不匹配")
+	}
+	fp := mediax.CapsFingerprint(caps)
+	if cached, e := s.openBrowserCompatibleFor(entry, mode, fp); e == nil {
+		return cached, false, nil
+	}
+	key := "stream:" + s.browserCompatiblePathFor(entry, mode, fp)
+	cache := s.media
+	cache.mu.Lock()
+	if cache.closed {
+		cache.mu.Unlock()
+		return nil, false, errors.New("服务正在停止")
+	}
+	if existing := cache.streams[key]; existing != nil {
+		cache.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-existing.done:
+		}
+		if existing.err != nil {
+			return nil, false, existing.err
+		}
+		cached, e := s.openBrowserCompatibleFor(entry, mode, fp)
+		if e != nil {
+			return nil, false, errors.New("兼容版本已生成，请重新打开文件")
+		}
+		return cached, false, nil
+	}
+	if len(cache.streams) >= 8 {
+		cache.mu.Unlock()
+		return nil, false, ErrBrowserViewBusy
+	}
+	leader := &browserStream{done: make(chan struct{})}
+	cache.streams[key] = leader
+	cache.mu.Unlock()
+
+	defer func() {
+		cache.mu.Lock()
+		delete(cache.streams, key)
+		cache.mu.Unlock()
+		close(leader.done)
+	}()
+	cache.streamSlots <- struct{}{}
+	defer func() { <-cache.streamSlots }()
+	if err = os.MkdirAll(s.originalCacheDir(), 0700); err != nil {
+		leader.err = err
+		return nil, false, err
+	}
+	dest := s.browserCompatiblePathFor(entry, mode, fp)
+	// From here the response body may already be flowing; any failure can only
+	// abort the stream and let the video element try the next playback mode.
+	streamed = true
+	// Linux subprocesses inherit the validated read-only descriptor, so a
+	// multi-GB source streams without a full copy first.
+	if err = mediax.MakeCompatibleFileStream(ctx, source, dest, mode, caps, w); err != nil {
+		leader.err = err
+		return nil, true, err
+	}
+	// The leader has already streamed the response body; followers may serve
+	// the completed cache file.
+	return nil, true, nil
+}
+
 // Probe streams when opening a video, including audio: a browser can otherwise
-// render the picture while silently dropping an unsupported audio track.
-func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, nativeHEVC ...bool) (string, error) {
+// render the picture while silently dropping an unsupported audio track. caps
+// reports what the requesting browser decodes; the zero value is the strict
+// universal baseline.
+func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, caps mediax.BrowserCaps) (string, error) {
 	source, entry, err := s.OpenBrowserSource(p, version)
 	if err != nil {
 		return "", err
@@ -166,19 +261,16 @@ func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, na
 	if err != nil {
 		return "", err
 	}
-	if !info.HDR && info.PlayableMP4(entry.Ext) {
+	if !info.HDR && info.SupportedMP4(entry.Ext, caps) {
 		return "", nil
 	}
-	if !info.HDR && (entry.Ext == "mp4" || entry.Ext == "m4v") && len(nativeHEVC) > 0 && nativeHEVC[0] && info.VideoStreams == 1 && info.VideoCodec == "hevc" && info.PixelFormat == "yuv420p" && info.AllAudioCompatible {
-		return "", nil
-	}
-	if !info.HDR && info.AllVideoCompatible && info.AllAudioCompatible {
+	if !info.HDR && info.AllVideoSupported(caps) && info.AllAudioSupported(caps) {
 		return "remux", nil
 	}
 	return "transcode", nil
 }
 
-func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode string, retry bool) (OriginalView, error) {
+func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode string, retry bool, caps mediax.BrowserCaps) (OriginalView, error) {
 	source, entry, err := s.OpenBrowserSource(p, version)
 	if err != nil {
 		return OriginalView{}, err
@@ -191,12 +283,13 @@ func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode strin
 	if mode == "" {
 		return ready, nil
 	}
-	if file, e := s.openBrowserCompatible(entry, mode); e == nil {
+	fp := mediax.CapsFingerprint(caps)
+	if file, e := s.openBrowserCompatibleFor(entry, mode, fp); e == nil {
 		file.Close()
 		return ready, nil
 	}
 	cache := s.media
-	key := "browser:" + s.browserCompatiblePath(entry, mode)
+	key := "browser:" + s.browserCompatiblePathFor(entry, mode, fp)
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	if cache.closed {
@@ -224,7 +317,7 @@ func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode strin
 		var conversionErr error
 		select {
 		case cache.slots <- struct{}{}:
-			conversionErr = s.makeBrowserCompatible(jobCtx, entry, mode, func(phase string, percent int) {
+			conversionErr = s.makeBrowserCompatible(jobCtx, entry, mode, caps, fp, func(phase string, percent int) {
 				cache.mu.Lock()
 				job.view.Phase, job.view.Percent = phase, max(job.view.Percent, min(99, percent))
 				cache.mu.Unlock()
@@ -244,7 +337,7 @@ func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode strin
 	return job.view, nil
 }
 
-func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry, mode string, progress func(string, int)) error {
+func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry, mode string, caps mediax.BrowserCaps, fp string, progress func(string, int)) error {
 	source, _, err := s.OpenBrowserSource(entry.Path, entry.Version)
 	if err != nil {
 		return err
@@ -266,7 +359,7 @@ func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry,
 	update := func(value float64) { progress(phase, int(value*99)) }
 	if runtime.GOOS == "linux" && entry.Kind == "video" {
 		progress(phase, 0)
-		err = mediax.MakeCompatibleFile(ctx, source, output.Name(), mode, update)
+		err = mediax.MakeCompatibleFile(ctx, source, output.Name(), mode, caps, update)
 	} else {
 		// Platforms without inherited seekable descriptors retain the guarded
 		// snapshot path. Images keep the same converter isolation as before.
@@ -287,7 +380,7 @@ func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry,
 			return e
 		}
 		progress(phase, 10)
-		err = mediax.MakeCompatibleProgress(ctx, input.Name(), output.Name(), entry.Kind, mode, func(value float64) { progress(phase, 10+int(value*89)) })
+		err = mediax.MakeCompatibleCapsProgress(ctx, input.Name(), output.Name(), entry.Kind, mode, caps, func(value float64) { progress(phase, 10+int(value*89)) })
 	}
 	if err != nil {
 		return err
@@ -302,7 +395,7 @@ func (s *Service) makeBrowserCompatible(ctx context.Context, entry BrowserEntry,
 	if beforeErr != nil || afterErr != nil || !os.SameFile(before, after) {
 		return ErrSourceChanged
 	}
-	if err = os.Rename(output.Name(), s.browserCompatiblePath(entry, mode)); err != nil {
+	if err = os.Rename(output.Name(), s.browserCompatiblePathFor(entry, mode, fp)); err != nil {
 		return fmt.Errorf("保存兼容查看缓存失败: %w", err)
 	}
 	return nil

@@ -14,10 +14,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"pimg/internal/mediax"
 	"pimg/internal/store"
 )
 
@@ -259,7 +261,7 @@ func waitBrowserView(t *testing.T, s *Server, entry store.BrowserEntry, mode str
 	t.Helper()
 	deadline := time.Now().Add(time.Minute)
 	for retry := true; ; retry = false {
-		view, err := s.Svc.PrepareBrowserView(t.Context(), entry.Path, entry.Version, mode, retry)
+		view, err := s.Svc.PrepareBrowserView(t.Context(), entry.Path, entry.Version, mode, retry, mediax.BrowserCaps{})
 		if err != nil || view.Status == "failed" {
 			t.Fatal("prepare view", err, view)
 		}
@@ -343,7 +345,7 @@ func TestFileBrowserVideoFormatsWatchableWithoutImport(t *testing.T) {
 			}
 			plain, _ := os.ReadFile(p)
 			entry := browserListing(t, s, root, "sample."+ext, 0).Items[0]
-			mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version)
+			mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -385,11 +387,11 @@ func TestFileBrowserHEVCRespectsNativeSupportAndFallback(t *testing.T) {
 		t.Skipf("HEVC encoder unavailable: %v %s", err, out)
 	}
 	entry := browserListing(t, s, root, "native.mp4", 0).Items[0]
-	mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version)
+	mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 	if err != nil || mode != "transcode" {
 		t.Fatal("unsupported clients must receive compatibility video", mode, err)
 	}
-	mode, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, true)
+	mode, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{HEVC8: true})
 	if err != nil || mode != "" {
 		t.Fatal("native HEVC was forced to transcode", mode, err)
 	}
@@ -402,6 +404,131 @@ func TestFileBrowserHEVCRespectsNativeSupportAndFallback(t *testing.T) {
 		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Compatible != "transcode" {
 			t.Fatal("native failure must not loop back to native playback", w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestFileBrowserCapabilityRoutingAndFingerprintedRemux(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	s := importServer(t)
+	root := t.TempDir()
+	p := filepath.Join(root, "main10.mkv")
+	args := []string{"-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=8", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "0.5",
+		"-c:v", "libx265", "-x265-params", "pools=1:frame-threads=1", "-pix_fmt", "yuv420p10le", "-c:a", "ac3", p}
+	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+		t.Skipf("HEVC Main10/AC-3 encoder unavailable: %v %s", err, out)
+	}
+	entry := browserListing(t, s, root, "main10.mkv", 0).Items[0]
+	mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	if err != nil || mode != "transcode" {
+		t.Fatal("strict clients must transcode 10-bit HEVC with AC-3", mode, err)
+	}
+	caps := mediax.BrowserCaps{HEVC10: true, AC3: true}
+	mode, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, caps)
+	if err != nil || mode != "remux" {
+		t.Fatal("a Main10 and AC-3 capable browser must remux instead of transcode", mode, err)
+	}
+	view, err := s.Svc.PrepareBrowserView(t.Context(), p, entry.Version, "remux", true, caps)
+	if err != nil {
+		t.Fatal("remux prepare", err)
+	}
+	for deadline := time.Now().Add(time.Minute); view.Status == "loading"; {
+		if time.Now().After(deadline) {
+			t.Fatal("remux timeout", view)
+		}
+		time.Sleep(30 * time.Millisecond)
+		if view, err = s.Svc.PrepareBrowserView(t.Context(), p, entry.Version, "remux", false, caps); err != nil {
+			t.Fatal("remux prepare", err)
+		}
+	}
+	if view.Status != "ready" {
+		t.Fatal("remux failed", view)
+	}
+	// The remux keeps the original streams: 10-bit HEVC picture, AC-3 audio.
+	matches, _ := filepath.Glob(filepath.Join(s.Cfg.Paths.RuntimeRoot(), "cache", "originals", "browser-*.remux-*.mp4"))
+	if len(matches) != 1 {
+		t.Fatal("capability remux cache must be fingerprinted", matches)
+	}
+	// A weaker browser must never receive that fingerprinted remux.
+	if _, _, err := s.Svc.OpenBrowserContent(p, entry.Version, "remux"); err == nil {
+		t.Fatal("strict remux cache leaked across capability sets")
+	}
+	fingerprinted, _, err := s.Svc.StreamBrowserCompatible(t.Context(), p, entry.Version, "remux", caps, io.Discard)
+	if err != nil || fingerprinted == nil {
+		t.Fatal("fingerprinted remux must be served back to the same caps", err, fingerprinted)
+	}
+	fingerprinted.Close()
+}
+
+func TestFileBrowserAudioOnlyCompatibilityKeepsPicture(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	s := importServer(t)
+	root := t.TempDir()
+	p := filepath.Join(root, "ac3.mp4")
+	args := []string{"-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=8", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "0.5",
+		"-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "ac3", "-movflags", "+faststart", p}
+	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+		t.Skipf("AC-3 encoder unavailable: %v %s", err, out)
+	}
+	entry := browserListing(t, s, root, "ac3.mp4", 0).Items[0]
+	caps := mediax.BrowserCaps{AC3: true}
+	mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, caps)
+	if err != nil || mode != "" {
+		t.Fatal("an AC-3 capable browser plays this MP4 directly", mode, err)
+	}
+	mode, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	if err != nil || mode != "transcode" {
+		t.Fatal("strict clients must convert the audio track", mode, err)
+	}
+	waitBrowserView(t, s, entry, mode)
+	content, _, err := s.Svc.OpenBrowserContent(p, entry.Version, mode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer content.Close()
+	info, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "csv=p=0", content.Name()).Output()
+	if err != nil || !strings.Contains(string(info), "h264,video") || !strings.Contains(string(info), "aac,audio") {
+		t.Fatal("audio-only conversion changed codecs", string(info), err)
+	}
+}
+
+func TestFileBrowserStreamsConversionWhilePlaying(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("streaming conversion uses the inherited Linux descriptor")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg unavailable")
+	}
+	s := importServer(t)
+	root := t.TempDir()
+	p := filepath.Join(root, "movie.avi")
+	if out, err := exec.Command("ffmpeg", "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=12", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "2", "-c:v", "mpeg4", "-c:a", "mp2", p).CombinedOutput(); err != nil {
+		t.Fatalf("fixture: %v %s", err, out)
+	}
+	entry := browserListing(t, s, root, "movie.avi", 0).Items[0]
+	mode, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	if err != nil || mode != "transcode" {
+		t.Fatal(mode, err)
+	}
+	var stream bytes.Buffer
+	file, streamed, err := s.Svc.StreamBrowserCompatible(t.Context(), p, entry.Version, mode, mediax.BrowserCaps{}, &stream)
+	if err != nil || !streamed || file != nil {
+		t.Fatal("first open must stream the conversion", err, streamed, file)
+	}
+	if !bytes.Contains(stream.Bytes(), []byte("ftyp")) {
+		t.Fatal("streamed output is not MP4", stream.Len())
+	}
+	cached, streamed, err := s.Svc.StreamBrowserCompatible(t.Context(), p, entry.Version, mode, mediax.BrowserCaps{}, io.Discard)
+	if err != nil || streamed || cached == nil {
+		t.Fatal("second open must serve the completed cache", err, streamed, cached)
+	}
+	defer cached.Close()
+	info, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,pix_fmt", "-of", "csv=p=0", cached.Name()).Output()
+	if err != nil || !strings.Contains(string(info), "h264,yuv420p") {
+		t.Fatal("streamed cache is not a compatible video", string(info), err)
 	}
 }
 
