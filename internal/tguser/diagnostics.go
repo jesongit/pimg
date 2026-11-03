@@ -139,8 +139,16 @@ func (c *Client) connectionFailure(stage string, err error) {
 	if c.status.State == "connecting" {
 		c.status.Error = f.Message
 	}
+	// The retry loop can hit the same failure many times per minute (a blocked
+	// proxy quota above all). Diagnostics keep every occurrence; the runtime
+	// log records only the first of a kind or one line per ten minutes, so a
+	// stuck connection cannot flood the log ring and database writes.
+	log := c.loggedKind != f.Kind || time.Since(c.loggedAt) >= 10*time.Minute
+	if log {
+		c.loggedKind, c.loggedAt = f.Kind, time.Now()
+	}
 	c.mu.Unlock()
-	if c.opts.Logger != nil {
+	if log && c.opts.Logger != nil {
 		c.opts.Logger.Warn("telegram_connection_failure", "stage", f.Stage, "error_type", f.Kind, "http_status", f.HTTPStatus)
 	}
 }

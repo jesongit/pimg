@@ -18,6 +18,7 @@ import (
 	"pimg/internal/config"
 	"pimg/internal/cryptox"
 	"pimg/internal/dbx"
+	"pimg/internal/proxytraffic"
 	"pimg/internal/tguser"
 )
 
@@ -224,6 +225,57 @@ func TestTelegramSameCredentialsCanRestartFailedRun(t *testing.T) {
 	waitRuntime(t, next.started)
 	if st := r.Status(); st.State != "authorized" {
 		t.Fatal("old run error persisted", st)
+	}
+	stopRuntime(t, r)
+}
+
+func TestTelegramQuotaExhaustionStopsRedialUntilQuotaReturns(t *testing.T) {
+	s, r := runtimeFixture(t)
+	blocked := proxytraffic.DefaultState()
+	blocked.DailyUsed = blocked.DailyLimit
+	// DayStart must sit inside the current period, or New rolls the counter.
+	blocked.DayStart = time.Now().Unix()
+	meter, err := proxytraffic.New(blocked, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.proxyTraffic = meter
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.root = ctx
+	var runs atomic.Int32
+	c := r.current().(*runtimeFixtureClient)
+	c.run = func(runCtx context.Context) error {
+		runs.Add(1)
+		<-runCtx.Done()
+		return runCtx.Err()
+	}
+	if err := r.launchLocked(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for runs.Load() != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("first run did not start", runs.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// While blocked, the watcher cancels the run and nothing may redial.
+	time.Sleep(3 * time.Second)
+	if runs.Load() != 1 {
+		t.Fatal("blocked quota must stop the SDK redial loop", runs.Load())
+	}
+	day := meter.View().State.DayStart
+	zero := int64(0)
+	if err := meter.Update(proxytraffic.Patch{DailyUsed: &zero, DayStart: &day}); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for runs.Load() < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("run did not resume after quota returned", runs.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	stopRuntime(t, r)
 }

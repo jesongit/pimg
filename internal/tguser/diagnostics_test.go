@@ -46,6 +46,24 @@ func TestConnectionFailuresAreTypedAndNeverExposeRawErrors(t *testing.T) {
 	}
 }
 
+func TestConnectionFailureLoggingDeduplicatesRepeatedKind(t *testing.T) {
+	var logs bytes.Buffer
+	c := New(Options{APIID: 1, APIHash: "fixture", Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+	for i := 0; i < 50; i++ {
+		c.connectionFailure("proxy_connect", proxytraffic.ErrLimit)
+	}
+	if n := strings.Count(logs.String(), "telegram_connection_failure"); n != 1 {
+		t.Fatal("repeated same-kind failures must log once", n)
+	}
+	if d := c.Diagnostics(); len(d.RecentFailures) != 16 {
+		t.Fatal("diagnostics must still record every occurrence up to the ring cap", len(d.RecentFailures))
+	}
+	c.connectionFailure("tcp_connect", syscall.ECONNREFUSED)
+	if n := strings.Count(logs.String(), "telegram_connection_failure"); n != 2 {
+		t.Fatal("a new failure kind must be logged", n)
+	}
+}
+
 func TestDiagnosticDialFailureHistoryAndReadyRecovery(t *testing.T) {
 	clearProxyEnvironment(t)
 	c := New(Options{APIID: 1, APIHash: "fixture"})

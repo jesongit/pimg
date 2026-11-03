@@ -46,6 +46,8 @@ type Client struct {
 	restarting    bool
 	proxySeen     atomic.Bool
 	connection    ConnectionDiagnostics // guarded by mu; no raw transport errors
+	loggedKind    string                // last Warn-logged failure kind, for dedupe
+	loggedAt      time.Time
 	// The phone and code hash exist only during the interactive login flow.
 	// Neither the code nor the password is retained by Client.
 	authMu   sync.Mutex

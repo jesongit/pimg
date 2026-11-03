@@ -433,8 +433,35 @@ func (r *telegramRuntime) launchLocked() error {
 		}()
 		var err error
 		for {
-			err = c.Run(ctx)
-			if ctx.Err() != nil || !errors.Is(err, proxytraffic.ErrLimit) {
+			// The SDK retries dials internally. While the proxy quota is
+			// exhausted every dial fails fast, so a plain reconnect loop would
+			// spin (and log) around the clock; watch the meter and stop the
+			// SDK outright until the quota returns, then reconnect itself.
+			runCtx, runCancel := context.WithCancelCause(ctx)
+			stopped := make(chan struct{})
+			go func() {
+				defer close(stopped)
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-runCtx.Done():
+						return
+					case <-ticker.C:
+					}
+					if r.service.proxyTraffic.Check() != nil {
+						runCancel(proxytraffic.ErrLimit)
+						return
+					}
+				}
+			}()
+			err = c.Run(runCtx)
+			runCancel(nil)
+			<-stopped
+			if ctx.Err() != nil {
+				break
+			}
+			if !errors.Is(err, proxytraffic.ErrLimit) && !errors.Is(context.Cause(runCtx), proxytraffic.ErrLimit) {
 				break
 			}
 			// A quota pause must not require a manual Telegram reconnect.
