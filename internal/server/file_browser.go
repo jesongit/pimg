@@ -159,6 +159,7 @@ func (s *Server) handleBrowserView(w http.ResponseWriter, r *http.Request) {
 	}
 	caps.HEVC8 = caps.HEVC8 || req.NativeHEVC
 	var probeDuration float64
+	var prepare bool
 	if req.Compatible == "" || req.Compatible == "auto" {
 		// "auto" is the explicit fallback after playback failed: decide with
 		// the strict baseline so a codec the browser claimed but failed to
@@ -167,7 +168,7 @@ func (s *Server) handleBrowserView(w http.ResponseWriter, r *http.Request) {
 		if req.Compatible == "auto" {
 			decisionCaps = mediax.BrowserCaps{}
 		}
-		mode, duration, err := s.Svc.BrowserPlaybackMode(r.Context(), req.Path, req.Version, decisionCaps)
+		mode, duration, needsPrepare, err := s.Svc.BrowserPlaybackMode(r.Context(), req.Path, req.Version, decisionCaps)
 		if err != nil {
 			fail(w, 409, err.Error())
 			return
@@ -175,9 +176,35 @@ func (s *Server) handleBrowserView(w http.ResponseWriter, r *http.Request) {
 		if req.Compatible == "auto" && mode == "" {
 			mode = "remux"
 		}
-		req.Compatible, probeDuration = mode, duration
+		req.Compatible, probeDuration, prepare = mode, duration, needsPrepare
 	}
 	if req.Compatible == "remux" || req.Compatible == "transcode" {
+		if prepare {
+			// Expensive conversions (HDR tone mapping) run to completion first:
+			// the client shows real progress and then plays a complete file with
+			// full seeking, instead of a stream that can never catch up.
+			view, err := s.Svc.PrepareBrowserView(r.Context(), req.Path, req.Version, req.Compatible, req.Retry, caps)
+			if err != nil {
+				status := http.StatusConflict
+				if errors.Is(err, store.ErrBrowserViewBusy) {
+					status = http.StatusTooManyRequests
+				}
+				fail(w, status, err.Error())
+				return
+			}
+			address := ""
+			if view.Status == "ready" {
+				address = browserContentURL(req.Path, req.Version, req.Compatible)
+			}
+			w.Header().Set("Cache-Control", "private, no-store")
+			writeJSON(w, 200, struct {
+				store.OriginalView
+				URL        string  `json:"url"`
+				Compatible string  `json:"compatible"`
+				Duration   float64 `json:"duration"`
+			}{view, address, req.Compatible, probeDuration})
+			return
+		}
 		// Videos no longer wait here: the content endpoint streams the
 		// conversion, so playback starts at the first ready fragment. The
 		// probed duration gives the player a stable progress denominator

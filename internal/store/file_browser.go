@@ -379,29 +379,31 @@ func (s *Service) pumpBrowserStream(ctx context.Context, w io.Writer, job *brows
 // reports what the requesting browser decodes; the zero value is the strict
 // universal baseline. The returned duration is the source video's real total,
 // which the player uses as a stable progress denominator while a fragmented
-// stream is still growing.
-func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, caps mediax.BrowserCaps) (string, float64, error) {
+// stream is still growing. prepare reports that the conversion is expensive
+// enough (HDR tone mapping) that the client should wait for a complete,
+// fully seekable file with a progress bar instead of streaming while it runs.
+func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, caps mediax.BrowserCaps) (string, float64, bool, error) {
 	source, entry, err := s.OpenBrowserSource(p, version)
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	defer source.Close()
 	if entry.Kind != "video" {
-		return "", 0, nil
+		return "", 0, false, nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	info, err := mediax.InspectVideo(probeCtx, source.Name())
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	if !info.HDR && info.SupportedMP4(entry.Ext, caps) {
-		return "", info.Duration, nil
+		return "", info.Duration, false, nil
 	}
 	if !info.HDR && info.AllVideoSupported(caps) && info.AllAudioSupported(caps) {
-		return "remux", info.Duration, nil
+		return "remux", info.Duration, false, nil
 	}
-	return "transcode", info.Duration, nil
+	return "transcode", info.Duration, info.HDR, nil
 }
 
 func (s *Service) PrepareBrowserView(ctx context.Context, p, version, mode string, retry bool, caps mediax.BrowserCaps) (OriginalView, error) {

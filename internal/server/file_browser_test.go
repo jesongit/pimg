@@ -344,7 +344,7 @@ func TestFileBrowserVideoFormatsWatchableWithoutImport(t *testing.T) {
 			}
 			plain, _ := os.ReadFile(p)
 			entry := browserListing(t, s, root, "sample."+ext, 0).Items[0]
-			mode, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+			mode, _, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -386,11 +386,11 @@ func TestFileBrowserHEVCRespectsNativeSupportAndFallback(t *testing.T) {
 		t.Skipf("HEVC encoder unavailable: %v %s", err, out)
 	}
 	entry := browserListing(t, s, root, "native.mp4", 0).Items[0]
-	mode, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	mode, _, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 	if err != nil || mode != "transcode" {
 		t.Fatal("unsupported clients must receive compatibility video", mode, err)
 	}
-	mode, _, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{HEVC8: true})
+	mode, _, _, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{HEVC8: true})
 	if err != nil || mode != "" {
 		t.Fatal("native HEVC was forced to transcode", mode, err)
 	}
@@ -419,12 +419,12 @@ func TestFileBrowserCapabilityRoutingAndFingerprintedRemux(t *testing.T) {
 		t.Skipf("HEVC Main10/AC-3 encoder unavailable: %v %s", err, out)
 	}
 	entry := browserListing(t, s, root, "main10.mkv", 0).Items[0]
-	mode, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	mode, _, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 	if err != nil || mode != "transcode" {
 		t.Fatal("strict clients must transcode 10-bit HEVC with AC-3", mode, err)
 	}
 	caps := mediax.BrowserCaps{HEVC10: true, AC3: true}
-	mode, _, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, caps)
+	mode, _, _, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, caps)
 	if err != nil || mode != "remux" {
 		t.Fatal("a Main10 and AC-3 capable browser must remux instead of transcode", mode, err)
 	}
@@ -474,11 +474,11 @@ func TestFileBrowserAudioOnlyCompatibilityKeepsPicture(t *testing.T) {
 	}
 	entry := browserListing(t, s, root, "ac3.mp4", 0).Items[0]
 	caps := mediax.BrowserCaps{AC3: true}
-	mode, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, caps)
+	mode, _, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, caps)
 	if err != nil || mode != "" {
 		t.Fatal("an AC-3 capable browser plays this MP4 directly", mode, err)
 	}
-	mode, _, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	mode, _, _, err = s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 	if err != nil || mode != "transcode" {
 		t.Fatal("strict clients must convert the audio track", mode, err)
 	}
@@ -505,7 +505,7 @@ func TestFileBrowserStreamsConversionWhilePlaying(t *testing.T) {
 		t.Fatalf("fixture: %v %s", err, out)
 	}
 	entry := browserListing(t, s, root, "movie.avi", 0).Items[0]
-	mode, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
+	mode, _, _, err := s.Svc.BrowserPlaybackMode(t.Context(), p, entry.Version, mediax.BrowserCaps{})
 	if err != nil || mode != "transcode" {
 		t.Fatal(mode, err)
 	}

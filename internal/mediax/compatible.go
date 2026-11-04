@@ -288,8 +288,16 @@ func compatibleAttempts(info VideoInfo, mode string, caps BrowserCaps) []encodeA
 		filter = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv," + filter
 	}
 	audio := []string{"-c:a", "aac", "-b:a", "128k"}
-	software := encodeAttempt{args: append(append(append([]string{}, maps...), "-vf", filter, "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"), audio...)}
-	if !hardwareEncodeAvailable() {
+	// HDR tone mapping is expensive on the CPU: auto threads and the faster
+	// preset keep it near realtime (measured ~1.1x at 2 threads vs ~2x).
+	preset, threads := "veryfast", "2"
+	if info.HDR {
+		preset, threads = "superfast", "0"
+	}
+	software := encodeAttempt{args: append(append(append([]string{}, maps...), "-vf", filter, "-c:v", "libx264", "-threads", threads, "-preset", preset, "-crf", "23", "-pix_fmt", "yuv420p"), audio...)}
+	// HDR needs a CPU tone-map pass before encoding; a hardware encode there
+	// was observed to hang this GPU driver, so HDR stays software only.
+	if !hardwareEncodeAvailable() || info.HDR {
 		return []encodeAttempt{software}
 	}
 	hardware := encodeAttempt{

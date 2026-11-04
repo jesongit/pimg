@@ -383,6 +383,11 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
+	if n, cerr := db.CompactRedundantDoneTasks(context.Background(), 5); cerr != nil {
+		log.Warn("任务历史压缩失败", "err", cerr)
+	} else if n > 0 {
+		log.Info("任务历史已压缩", "removed", n)
+	}
 	defer svc.StopBrowserIndex()
 	if !cfg.DevMock {
 		if err = config.SaveStartup(cfg, master); err != nil {
