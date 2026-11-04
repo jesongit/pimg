@@ -51,6 +51,8 @@ var videoMimes = map[string]string{
 	"mov": "video/quicktime", "qt": "video/quicktime", "mkv": "video/x-matroska",
 	"ts": "video/mp2t", "m2ts": "video/mp2t", "mts": "video/mp2t",
 	"avi": "video/x-msvideo", "flv": "video/x-flv", "3gp": "video/3gpp", "3g2": "video/3gpp2",
+	"wmv": "video/x-ms-wmv", "mpg": "video/mpeg", "mpeg": "video/mpeg", "m2v": "video/mpeg",
+	"vob": "video/mpeg", "ogv": "video/ogg", "ogm": "video/ogg", "rm": "video/vnd.rn-realvideo",
 }
 
 // Detect 依据扩展名 + 内容嗅探识别媒体。
