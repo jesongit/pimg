@@ -158,10 +158,13 @@ export default function FileBrowser() {
   const [toolsPos, setToolsPos] = useState({ top: 0, left: 0 });
   const [mkdirOpen, setMkdirOpen] = useState(false), [mkdirName, setMkdirName] = useState(""), [mkdirBusy, setMkdirBusy] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false), [linkTarget, setLinkTarget] = useState(""), [linkBusy, setLinkBusy] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null), menuPortalRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!toolsOpen) return;
-    const close = (event: MouseEvent) => { if (!menuRef.current?.contains(event.target as Node)) setToolsOpen(false); };
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !menuPortalRef.current?.contains(target)) setToolsOpen(false);
+    };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [toolsOpen]);
@@ -226,9 +229,9 @@ export default function FileBrowser() {
         <button type="button" className="btn" disabled={!data || loading || !!query} title={query ? "清除搜索后可导入当前目录" : "选择相册后导入，可包含子目录"} onClick={() => data && importPaths([data.path], true)}>导入当前目录</button>
         <div ref={menuRef} className="browser-tools-menu-wrap">
           <button type="button" className="btn btn-ghost browser-tools-menu-trigger" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={event => { setToolsOpen(v => !v); const r = (event.currentTarget as HTMLElement).getBoundingClientRect(); setToolsPos({ top: r.bottom + 6, left: r.right - 180 }); }}>操作<i aria-hidden="true" style={{fontStyle:"normal",marginLeft:4}}>▾</i></button>
-          {toolsOpen && createPortal(<div className="browser-tools-menu" role="menu" style={{ position: "fixed", top: toolsPos.top, left: toolsPos.left, zIndex: 999999, minWidth: 160, width: "auto", background: "#ffffff", color: "#1f2a33", border: "1px solid #cbd5df", borderRadius: 8, padding: 4, boxShadow: "0 8px 30px rgba(0,0,0,.3)" }}>
-            <button type="button" role="menuitem" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", whiteSpace: "nowrap", padding: "9px 12px", border: 0, borderRadius: 6, background: "transparent", color: "inherit", font: "inherit", fontSize: 13, cursor: "pointer" }} onClick={() => { setToolsOpen(false); setMkdirOpen(true); }}><IconFolderPlus size={16} />新建文件夹</button>
-            <button type="button" role="menuitem" disabled={!selected.size} title={selected.size ? "" : "请先勾选要硬链接的文件或文件夹"} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", whiteSpace: "nowrap", padding: "9px 12px", border: 0, borderRadius: 6, background: "transparent", color: "inherit", font: "inherit", fontSize: 13, cursor: "pointer", opacity: selected.size ? 1 : .45 }} onClick={() => { setToolsOpen(false); setLinkTarget(data?.path || ""); setLinkOpen(true); }}><IconLink size={16} />硬链接选中项</button>
+          {toolsOpen && createPortal(<div ref={menuPortalRef} role="menu" style={{ position: "fixed", top: toolsPos.top, left: toolsPos.left, zIndex: 999999, minWidth: 170, width: "max-content", background: "#ffffff", color: "#1f2a33", border: "1px solid #cbd5df", borderRadius: 8, padding: 4, boxShadow: "0 8px 30px rgba(0,0,0,.3)", display: "flex", flexDirection: "column" }}>
+            <button type="button" role="menuitem" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", whiteSpace: "nowrap", padding: "9px 12px", border: 0, borderRadius: 6, background: "transparent", color: "#1f2a33", font: "inherit", fontSize: 13, cursor: "pointer" }} onClick={() => { setToolsOpen(false); setMkdirOpen(true); }}><IconFolderPlus size={16} />新建文件夹</button>
+            <button type="button" role="menuitem" disabled={!selected.size} title={selected.size ? "" : "请先勾选要硬链接的文件或文件夹"} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", whiteSpace: "nowrap", padding: "9px 12px", border: 0, borderRadius: 6, background: "transparent", color: "#1f2a33", font: "inherit", fontSize: 13, cursor: "pointer", opacity: selected.size ? 1 : .45 }} onClick={() => { setToolsOpen(false); setLinkTarget(data?.path || ""); setLinkOpen(true); }}><IconLink size={16} />硬链接选中项</button>
           </div>, document.body)}
         </div>
       </div>
