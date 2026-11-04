@@ -23,11 +23,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOEXPERIMENT=nogreenteag
 # 运行阶段：单二进制 + ffmpeg/ffprobe（播放兼容、视频切分和封面）
 FROM alpine:3.23
 LABEL org.opencontainers.image.title="Pimg" \
-      org.opencontainers.image.version="1.0.50" \
+      org.opencontainers.image.version="1.0.52" \
       org.opencontainers.image.source="https://github.com/jesongit/pimg" \
       org.opencontainers.image.url="https://www.posase.net" \
       org.opencontainers.image.description="Multi-user image and album storage with Telegram archives"
-RUN apk add --no-cache ca-certificates tzdata ffmpeg libheif-tools intel-media-driver 7zip
+RUN apk add --no-cache ca-certificates tzdata ffmpeg libheif-tools intel-media-driver 7zip libarchive-tools
 COPY --from=backend /pimg /app/pimg
 WORKDIR /pimg
 ENV PIMG_DATA_DIR=/pimg/data PIMG_RUNTIME_DIR=/pimg/runtime

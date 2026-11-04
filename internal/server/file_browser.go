@@ -21,6 +21,8 @@ func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/file-browser/content", s.auth(s.handleBrowserContent))
 	mux.HandleFunc("POST /api/admin/file-browser/extract", s.auth(s.handleBrowserExtract))
 	mux.HandleFunc("GET /api/admin/file-browser/extract", s.auth(s.handleBrowserExtractStatus))
+	mux.HandleFunc("POST /api/admin/file-browser/mkdir", s.auth(s.handleBrowserMkdir))
+	mux.HandleFunc("POST /api/admin/file-browser/hardlink", s.auth(s.handleBrowserHardlink))
 	mux.HandleFunc("GET /api/admin/file-browser/index", s.auth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		writeJSON(w, 200, s.Svc.BrowserIndexStatus())
@@ -69,6 +71,68 @@ func (s *Server) handleBrowserExtractStatus(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, 200, job)
+}
+
+func (s *Server) handleBrowserMkdir(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Parent string `json:"parent"`
+		Name   string `json:"name"`
+	}
+	if err := readJSONBody(r, &req, 8<<10); err != nil {
+		fail(w, 400, "参数无效")
+		return
+	}
+	parent, err := s.Svc.AbsoluteBrowserPath(req.Parent)
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || strings.ContainsRune(name, '/') || strings.ContainsRune(name, '\\') || strings.Contains(name, "..") {
+		fail(w, 400, "文件夹名称无效")
+		return
+	}
+	if err := s.Svc.CreateBrowserDir(parent, name); err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleBrowserHardlink(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Paths  []string `json:"paths"`
+		Target string   `json:"target"`
+	}
+	if err := readJSONBody(r, &req, 64<<10); err != nil {
+		fail(w, 400, "参数无效")
+		return
+	}
+	if len(req.Paths) == 0 {
+		fail(w, 400, "未选择文件或文件夹")
+		return
+	}
+	target, err := s.Svc.AbsoluteBrowserPath(req.Target)
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	paths := make([]string, 0, len(req.Paths))
+	for _, p := range req.Paths {
+		abs, err := s.Svc.AbsoluteBrowserPath(p)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		paths = append(paths, abs)
+	}
+	if err := s.Svc.HardlinkBrowserItems(paths, target); err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {

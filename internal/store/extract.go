@@ -156,46 +156,69 @@ func (s *Service) runOneExtract(key string, job *extractJob) {
 	e.mu.Unlock()
 }
 
+// runExtractCommand 抽取一个压缩包到 out 目录。rar（含 RAR5）用 bsdtar，
+// 否则用 7z；任一失败会回退到另一个工具，并把工具实际报错带出。
 func (s *Service) runExtractCommand(abs, out string, job *extractJob) error {
-	args := []string{"x", "-y", "-bd", "-bsp1", "-o" + out, abs}
-	cmd := exec.Command("7z", args...)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(abs), "."))
+	var attempts []struct{ name string; args []string }
+	args7z := []string{"x", "-y", "-bd", "-bsp1", "-o" + out, abs}
+	argsBsd := []string{"-xpf", abs, "-C", out}
+	if ext == "rar" {
+		attempts = []struct{ name string; args []string }{{"bsdtar", argsBsd}, {"7z", args7z}}
+	} else {
+		attempts = []struct{ name string; args []string }{{"7z", args7z}, {"bsdtar", argsBsd}}
 	}
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	// 7z -bsp1 prints lines like " 23%  12 of 100..." ; parse the trailing %.
-	sc := bufio.NewScanner(stdout)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if pct := parse7zPercent(line); pct >= 0 {
-			e := s.extract
-			e.mu.Lock()
-			job.Percent = pct
-			e.mu.Unlock()
+	var lastErr error
+	for _, at := range attempts {
+		if _, err := exec.LookPath(at.name); err != nil {
+			lastErr = err
+			continue
 		}
-	}
-	scErr := sc.Err()
-	var exitErr string
-	if werr := cmd.Wait(); werr != nil {
-		var exit *exec.ExitError
-		if errors.As(werr, &exit) {
-			exitErr = "（code " + itoa(exit.ExitCode()) + "）: " + strings.TrimSpace(stderr.String())
-		} else {
-			exitErr = werr.Error()
+		cmd := exec.Command(at.name, at.args...)
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			lastErr = err
+			continue
 		}
+		if err = cmd.Start(); err != nil {
+			lastErr = err
+			continue
+		}
+		sc := bufio.NewScanner(stdout)
+		for sc.Scan() {
+			line := strings.TrimSpace(sc.Text())
+			if pct := parse7zPercent(line); pct >= 0 {
+				e := s.extract
+				e.mu.Lock()
+				job.Percent = pct
+				e.mu.Unlock()
+			}
+		}
+		scErr := sc.Err()
+		var detail string
+		if werr := cmd.Wait(); werr != nil {
+			if exit, ok := werr.(*exec.ExitError); ok {
+				detail = "（code " + itoa(exit.ExitCode()) + "）: " + strings.TrimSpace(stderr.String())
+			} else {
+				detail = werr.Error()
+			}
+		}
+		if scErr != nil {
+			lastErr = errors.New(at.name + " 进度读取失败: " + scErr.Error())
+			continue
+		}
+		if detail != "" {
+			lastErr = errors.New(at.name + " " + detail)
+			continue
+		}
+		return nil // 成功
 	}
-	if scErr != nil {
-		return errors.New("解压进度读取失败: " + scErr.Error())
+	if lastErr == nil {
+		lastErr = errors.New("没有可用的解压工具")
 	}
-	if exitErr != "" {
-		return errors.New("解压失败" + exitErr)
-	}
-	return nil
+	return lastErr
 }
 
 // parse7zPercent extracts a bare percentage from a 7z progress line, e.g.

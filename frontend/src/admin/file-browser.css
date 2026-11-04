@@ -46,3 +46,12 @@
  .browser-type-cell{grid-column:2;grid-row:2}.browser-table .browser-size-cell{grid-column:3;grid-row:2;text-align:right;padding:2px 4px}.browser-created-cell,.browser-modified-cell{grid-column:2/4;font-size:11px}.browser-created-cell{grid-row:3}.browser-modified-cell{grid-row:4}.browser-created-cell::before,.browser-modified-cell::before{content:attr(data-label);margin-right:8px}
  .file-browser-batch{left:10px;right:10px;max-width:calc(100vw - 20px);gap:8px}.file-browser-batch>span{font-size:var(--fs-s)}.file-browser-batch>.btn{font-size:var(--fs-s);padding-inline:9px}
 }
+
+.browser-tools-menu-wrap{position:relative}
+.browser-tools-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:180px;background:var(--surface-1);border:1px solid var(--line);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column}
+.browser-tools-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;border-radius:6px;background:transparent;color:var(--ink-1);font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.browser-tools-menu button:hover{background:var(--surface-2)}
+.browser-tools-menu button:disabled{opacity:.45;cursor:default}
+.browser-tools-menu svg{flex-shrink:0}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.browser-select-all{padding:0}

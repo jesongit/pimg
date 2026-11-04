@@ -1,29 +1,20 @@
 import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { IconArrowDown, IconArrowUp, IconChevronRight, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconStar, IconStarFilled, IconDownload, IconX } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowUp, IconChevronRight, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconDownload, IconFolderPlus, IconLink, IconX } from "@tabler/icons-react";
 import { api, fmtSize } from "../api";
 import type { BrowserIndexStatus } from "../api";
 import { useGallery } from "./GalleryScope";
 import { useToast } from "../App";
 import SelectAllControl from "./SelectAllControl";
-import FilterSelect from "./FilterSelect";
 import LocalImport from "./LocalImport";
 import BrowserViewer from "./BrowserViewer";
 import MediaFullscreenSession from "../media/MediaFullscreenSession";
-import FileBookmarks, { useFileBookmarks } from "./FileBookmarks";
 import useDragSelection from "./useDragSelection";
 import { browserBase, browserPathLabel } from "./browserMedia";
 import type { BrowserEntry, BrowserListing } from "./browserMedia";
 import "./file-browser.css";
 
-const sortOptions = [
-  { value: "name", label: "名称升序" }, { value: "name_desc", label: "名称降序" },
-  { value: "size_desc", label: "文件大小从大到小", section: true }, { value: "size_asc", label: "文件大小从小到大" },
-  { value: "type", label: "文件类型升序", section: true }, { value: "type_desc", label: "文件类型降序" },
-  { value: "created_desc", label: "创建时间从新到旧", section: true }, { value: "created_asc", label: "创建时间从旧到新" },
-  { value: "modified_desc", label: "修改时间从新到旧", section: true }, { value: "modified_asc", label: "修改时间从旧到新" },
-];
 const sortLabels: Record<string, string> = { name: "名称 ↑", name_desc: "名称 ↓", size_desc: "大小 ↓", size_asc: "大小 ↑", type: "类型 ↑", type_desc: "类型 ↓", created_desc: "创建 ↓", created_asc: "创建 ↑", modified_desc: "修改 ↓", modified_asc: "修改 ↑" };
 const columns = [
   { label: "名称", asc: "name", desc: "name_desc", className: "browser-name-column" },
@@ -50,10 +41,9 @@ export default function FileBrowser() {
       const next = new URLSearchParams(params); next.delete("recursive"); setParams(next, { replace: true });
     }
   }, [path, pathChanged, params, setParams]);
-  const requestedSort = params.get("sort") || "name", sort = sortOptions.some(option => option.value === requestedSort) ? requestedSort : "name";
+  const requestedSort = params.get("sort") || "name", sort = columns.some(column => requestedSort === column.asc || requestedSort === column.desc) ? requestedSort : "name";
   const [search, setSearch] = useState(query);
   const [data, setData] = useState<BrowserListing | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
-  const bookmarks = useFileBookmarks(storageKey, data ? data.breadcrumbs[data.breadcrumbs.length - 1] || { path: data.path, name: data.path } : null);
   const [revision, setRevision] = useState(0), [more, setMore] = useState(false);
   const [indexChanged, setIndexChanged] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set()), [detail, setDetail] = useState<string | null>(null);
@@ -128,6 +118,7 @@ export default function FileBrowser() {
     finally { if (request === sequence.current) setMore(false); }
   };
   const items = data?.items || [], files = items.filter(entry => !entry.directory);
+  const allItemsSelected = items.length > 0 && items.every(entry => selected.has(entry.path));
   const refresh = async () => {
     if (data?.indexed) {
       try { await api.post(`${browserBase}/index/refresh`, {}); }
@@ -160,6 +151,33 @@ export default function FileBrowser() {
     else if (entry.kind !== "other") setDetail(entry.path);
   };
   const isArchive = (entry: BrowserEntry) => !entry.directory && /^(zip|rar|7z|iso)$/i.test(entry.ext);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [mkdirOpen, setMkdirOpen] = useState(false), [mkdirName, setMkdirName] = useState(""), [mkdirBusy, setMkdirBusy] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false), [linkTarget, setLinkTarget] = useState(""), [linkBusy, setLinkBusy] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const close = (event: MouseEvent) => { if (!menuRef.current?.contains(event.target as Node)) setToolsOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [toolsOpen]);
+  const doMkdir = async () => {
+    const name = mkdirName.trim();
+    if (!name || !data) return;
+    setMkdirBusy(true);
+    try { await api.post(`${browserBase}/mkdir`, { parent: data.path, name }); toast(`已创建文件夹 ${name}`, "ok"); setMkdirOpen(false); setMkdirName(""); void refresh(); }
+    catch (err) { toast(err instanceof Error ? err.message : "创建文件夹失败", "err"); }
+    finally { setMkdirBusy(false); }
+  };
+  const doHardlink = async () => {
+    if (!selected.size || !linkTarget.trim()) return;
+    setLinkBusy(true);
+    try { await api.post(`${browserBase}/hardlink`, { paths: [...selected], target: linkTarget.trim() }); toast("已创建硬链接", "ok"); setLinkOpen(false); }
+    catch (err) { toast(err instanceof Error ? err.message : "硬链接失败", "err"); }
+    finally { setLinkBusy(false); }
+  };
+  const hardlinkFiles = [...selected].filter(p => items.some(e => e.path === p && !e.directory)).length;
+  const hardlinkDirs = [...selected].filter(p => items.some(e => e.path === p && e.directory)).length;
   const [extracting, setExtracting] = useState<Record<string, number>>({});
   const extractArchive = async (entry: BrowserEntry) => {
     if (!isArchive(entry) || extracting[entry.path] !== undefined) return;
@@ -192,19 +210,23 @@ export default function FileBrowser() {
     <div className="file-browser-tools">
       <div className="file-browser-navigation">
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-up" aria-label="上一级" title="上一级" disabled={!data || data.parent === data.path || loading} onClick={() => data && visit(data.parent)}><IconArrowUp size={17} /></button>
-        <FileBookmarks locations={bookmarks.locations} currentPath={data?.path} onVisit={visit} onRemove={bookmarks.remove} />
         <nav ref={breadcrumbs} className="file-browser-breadcrumbs" aria-label="文件夹路径">{folderNav.map((item, index) => <span key={item.path}>{index > 0 && <IconChevronRight size={13} />}<button type="button" className="text-button" title={item.path} aria-current={index === folderNav.length - 1 ? "location" : undefined} onClick={() => visit(item.path)}>{item.name}</button></span>)}</nav>
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-expand" aria-label={recursive ? "收起所有文件" : "展开所有文件"} title={data && data.parent === data.path || isRootPath(path) ? "根目录不支持展开，请先进入子文件夹" : recursive ? "收起所有文件，返回逐层浏览" : "展开当前目录及子目录中的所有图片和视频"} aria-pressed={recursive} disabled={loading || !data && !recursive || !!data && data.parent === data.path || isRootPath(path)} onClick={toggleExpanded}><IconFolders size={17} /></button>
-        <button type="button" className="btn btn-ghost file-browser-icon" aria-label={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} title={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} aria-pressed={bookmarks.saved} disabled={!data || loading} onClick={bookmarks.toggle}>{bookmarks.saved ? <IconStarFilled size={17} /> : <IconStar size={17} />}</button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label="刷新目录" title="刷新目录" disabled={loading} onClick={() => void refresh()}><IconRefresh size={17} /></button>
       </div>
       <div className="file-browser-actions">
         <SelectAllControl checked={allSelected} indeterminate={selected.size > 0 && !allSelected} disabled={!selectable.length || loading} scope="全选已加载的可导入文件" onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(entry => entry.path)))} />
         <label className="file-browser-search"><IconSearch size={16} /><input className="input" aria-label={recursive ? "搜索所有图片和视频" : "搜索当前目录"} placeholder={recursive ? "搜索所有图片和视频" : "搜索当前目录"} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="btn btn-ghost" aria-label="清除文件搜索" onClick={() => setSearch("")}><IconX size={15} /></button>}</label>
-        <FilterSelect label="文件排序" value={sort} displayLabel={sortLabels[sort]} options={sortOptions} active={sort !== "name"} width={208} onChange={changeSort} />
         <span className="file-browser-count" role="status">{data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : ""}</span>
         <span className="file-browser-readonly">源文件只读</span>
         <button type="button" className="btn" disabled={!data || loading || !!query} title={query ? "清除搜索后可导入当前目录" : "选择相册后导入，可包含子目录"} onClick={() => data && importPaths([data.path], true)}>导入当前目录</button>
+        <div ref={menuRef} className="browser-tools-menu-wrap">
+          <button type="button" className="btn btn-ghost browser-tools-menu-trigger" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => setToolsOpen(v => !v)}>操作</button>
+          {toolsOpen && <div className="browser-tools-menu" role="menu">
+            <button type="button" role="menuitem" onClick={() => { setToolsOpen(false); setMkdirOpen(true); }}><IconFolderPlus size={16} />新建文件夹</button>
+            <button type="button" role="menuitem" disabled={!selected.size} title={selected.size ? "" : "请先勾选要硬链接的文件或文件夹"} onClick={() => { setToolsOpen(false); setLinkTarget(data?.path || ""); setLinkOpen(true); }}><IconLink size={16} />硬链接选中项</button>
+          </div>}
+        </div>
       </div>
     </div>
     <div className="file-browser-content" aria-busy={loading}>
@@ -215,7 +237,7 @@ export default function FileBrowser() {
         <div ref={root} className={`file-browser-list${drag.active ? " is-drag-selecting" : ""}`} {...drag.bind}>
           <table className="browser-table" aria-label={recursive ? "所有图片和视频" : "文件列表"}>
             <colgroup><col className="browser-check-column" />{columns.map(column => <col key={column.asc} className={column.className} />)}</colgroup>
-            <thead><tr><th scope="col"><span className="sr-only">选择</span></th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}</tr></thead>
+            <thead><tr><th scope="col" className="browser-check-column">{items.length > 0 && <button type="button" role="checkbox" aria-checked={allItemsSelected ? "true" : selected.size > 0 ? "mixed" : "false"} aria-label="全选当前列表（含文件夹）" className="browser-row-check browser-select-all" onClick={() => setSelected(allItemsSelected ? new Set() : new Set(items.map(item => item.path)))}><span className="check" data-on={allItemsSelected} data-indeterminate={!allItemsSelected && selected.size > 0}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}</tr></thead>
             <tbody>{items.map(entry => <tr key={entry.path + entry.version} data-file-id={entry.path} data-selection-disabled={!entry.importable ? "true" : undefined} className={`browser-row${selected.has(entry.path) ? " selected" : ""}`} onClick={event => { if (!(event.target as HTMLElement).closest("button,a,input")) openEntry(entry, event.shiftKey); }}>
               <td className="browser-select-cell">{entry.importable && <button type="button" className="browser-row-check" role="checkbox" aria-checked={selected.has(entry.path)} aria-label={`选择文件 ${entry.name}`} onClick={event => toggle(entry, event.shiftKey)}><span className="check" data-on={selected.has(entry.path)}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</td>
               <td className="browser-name-cell"><div className="browser-name-row-wrap"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other" && !isArchive(entry)} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={browserPathLabel(entry.path)} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" && !isArchive(entry) ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button>{isArchive(entry) ? <button type="button" className="browser-extract-btn" aria-label={`解压 ${entry.name}`} title={extracting[entry.path] !== undefined ? `解压 ${entry.name} 中 ${extracting[entry.path] >= 0 ? extracting[entry.path] + "%" : "…"}` : "解压到当前目录旁"} disabled={extracting[entry.path] !== undefined} onClick={event => { event.stopPropagation(); void extractArchive(entry); }}>{extracting[entry.path] !== undefined ? <span className="browser-extract-label">{extracting[entry.path] >= 0 ? `${extracting[entry.path]}%` : "解压中"}</span> : <IconDownload size={16} />}</button> : null}</div></td>
@@ -232,5 +254,19 @@ export default function FileBrowser() {
     {selected.size > 0 && <div className="batch-bar file-browser-batch" aria-label="文件导入操作"><span role="status">已选 {selected.size} 个文件</span><button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>取消选择</button><button type="button" className="btn btn-crayon" onClick={() => importPaths([...selected])}>导入到相册</button></div>}
     {current && <MediaFullscreenSession><BrowserViewer key={current.path + current.version} entry={current} position={`${active + 1} / ${media.length}${data?.next_offset ? "+" : ""}`} selected={selected.has(current.path)} onSelect={() => toggle(current)} onPrev={active > 0 ? () => setDetail(media[active - 1].path) : undefined} onNext={active + 1 < media.length ? () => setDetail(media[active + 1].path) : data?.next_offset ? () => { void loadMore().then(result => { const next = result?.items.find(entry => entry.kind === "image" || entry.kind === "video"); if (next) setDetail(next.path); }); } : undefined} onClose={() => setDetail(null)} onImport={() => importPaths([current.path])} /></MediaFullscreenSession>}
     {importing && <LocalImport albums={[]} paths={importing.paths} directoryImport={importing.directory} onClose={() => setImporting(null)} />}
+    {mkdirOpen ? <><div className="overlay" onClick={() => !mkdirBusy && setMkdirOpen(false)} /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="mkdir-title" onClick={event => event.stopPropagation()}>
+      <div className="dhead"><h2 id="mkdir-title">新建文件夹</h2><button type="button" className="btn btn-ghost" disabled={mkdirBusy} onClick={() => setMkdirOpen(false)}>关闭</button></div>
+      <form onSubmit={event => { event.preventDefault(); void doMkdir(); }}>
+        <fieldset disabled={mkdirBusy}><label htmlFor="mkdir-name">文件夹名称</label><input id="mkdir-name" className="input" value={mkdirName} onChange={event => setMkdirName(event.target.value)} placeholder="名称（不允许 / 或 ..）" autoFocus /></fieldset>
+        <div className="modal-actions"><button type="button" className="btn btn-ghost" disabled={mkdirBusy} onClick={() => setMkdirOpen(false)}>取消</button><button type="submit" className="btn" disabled={mkdirBusy || !mkdirName.trim()}>{mkdirBusy ? "创建中…" : "创建"}</button></div>
+      </form>
+    </div></> : null}
+    {linkOpen ? <><div className="overlay" onClick={() => !linkBusy && setLinkOpen(false)} /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="link-title" onClick={event => event.stopPropagation()}>
+      <div className="dhead"><h2 id="link-title">硬链接</h2><button type="button" className="btn btn-ghost" disabled={linkBusy} onClick={() => setLinkOpen(false)}>关闭</button></div>
+      <form onSubmit={event => { event.preventDefault(); void doHardlink(); }}>
+        <fieldset disabled={linkBusy}><p>将选中的 <strong>{hardlinkFiles}</strong> 个文件、<strong>{hardlinkDirs}</strong> 个文件夹硬链接到目标目录</p><label htmlFor="link-target">目标目录（绝对路径）</label><input id="link-target" className="input" value={linkTarget} onChange={event => setLinkTarget(event.target.value)} placeholder="/data/..." autoFocus /></fieldset>
+        <div className="modal-actions"><button type="button" className="btn btn-ghost" disabled={linkBusy} onClick={() => setLinkOpen(false)}>取消</button><button type="submit" className="btn" disabled={linkBusy || !linkTarget.trim()}>{linkBusy ? "链接中…" : "硬链接"}</button></div>
+      </form>
+    </div></> : null}
   </section>;
 }
