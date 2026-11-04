@@ -27,7 +27,7 @@ LABEL org.opencontainers.image.title="Pimg" \
       org.opencontainers.image.source="https://github.com/jesongit/pimg" \
       org.opencontainers.image.url="https://www.posase.net" \
       org.opencontainers.image.description="Multi-user image and album storage with Telegram archives"
-RUN apk add --no-cache ca-certificates tzdata ffmpeg libheif-tools intel-media-driver
+RUN apk add --no-cache ca-certificates tzdata ffmpeg libheif-tools intel-media-driver 7zip
 COPY --from=backend /pimg /app/pimg
 WORKDIR /pimg
 ENV PIMG_DATA_DIR=/pimg/data PIMG_RUNTIME_DIR=/pimg/runtime
