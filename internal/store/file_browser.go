@@ -397,10 +397,10 @@ func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, ca
 	if err != nil {
 		return "", 0, false, err
 	}
-	if !info.HDR && info.SupportedMP4(entry.Ext, caps) {
+	if info.SupportedMP4(entry.Ext, caps) {
 		return "", info.Duration, false, nil
 	}
-	if !info.HDR && info.AllVideoSupported(caps) && info.AllAudioSupported(caps) {
+	if info.AllVideoSupported(caps) && info.AllAudioSupported(caps) {
 		return "remux", info.Duration, false, nil
 	}
 	return "transcode", info.Duration, info.HDR, nil

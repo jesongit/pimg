@@ -277,7 +277,7 @@ func compatibleAttempts(info VideoInfo, mode string, caps BrowserCaps) []encodeA
 	if mode == "remux" {
 		return []encodeAttempt{{args: append(maps, "-c", "copy")}}
 	}
-	videoCopy := !info.HDR && info.AllVideoSupported(caps)
+	videoCopy := info.AllVideoSupported(caps)
 	audioCopy := info.AllAudioSupported(caps)
 	if videoCopy && !audioCopy {
 		// An unsupported audio track does not require re-encoding the picture.
@@ -285,7 +285,10 @@ func compatibleAttempts(info VideoInfo, mode string, caps BrowserCaps) []encodeA
 	}
 	filter := "pad=ceil(iw/2)*2:ceil(ih/2)*2"
 	if info.HDR {
-		filter = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv," + filter
+		// Downscale before tone mapping: 4K tone mapping runs at well under
+		// realtime, while a 1080p output keeps compatibility playback usable.
+		filter = "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2," +
+			"zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv," + filter
 	}
 	audio := []string{"-c:a", "aac", "-b:a", "128k"}
 	// HDR tone mapping is expensive on the CPU: auto threads and the faster

@@ -48,9 +48,9 @@ var imageMimes = map[string]string{
 
 var videoMimes = map[string]string{
 	"mp4": "video/mp4", "m4v": "video/mp4", "webm": "video/webm",
-	"mov": "video/quicktime", "mkv": "video/x-matroska",
+	"mov": "video/quicktime", "qt": "video/quicktime", "mkv": "video/x-matroska",
 	"ts": "video/mp2t", "m2ts": "video/mp2t", "mts": "video/mp2t",
-	"avi": "video/x-msvideo", "flv": "video/x-flv",
+	"avi": "video/x-msvideo", "flv": "video/x-flv", "3gp": "video/3gpp", "3g2": "video/3gpp2",
 }
 
 // Detect 依据扩展名 + 内容嗅探识别媒体。
