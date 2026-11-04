@@ -219,7 +219,21 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 	if job == nil {
 		dest := s.browserCompatiblePathFor(entry, mode, fp)
 		convCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
-		job = &browserStream{temp: dest + ".building", done: make(chan struct{}), cancel: cancel}
+		temp := dest + ".building"
+		// Create the building file up front: the player's pump attaches to it
+		// immediately and waits as long as the conversion needs, even when the
+		// box is saturated and ffmpeg has not started yet.
+		if err := os.MkdirAll(s.originalCacheDir(), 0700); err != nil {
+			cache.mu.Unlock()
+			return nil, false, err
+		}
+		created, err := os.OpenFile(temp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		if err != nil {
+			cache.mu.Unlock()
+			return nil, false, err
+		}
+		created.Close()
+		job = &browserStream{temp: temp, done: make(chan struct{}), cancel: cancel}
 		cache.streams[key] = job
 		cache.mu.Unlock()
 		job.addPump()
@@ -227,9 +241,6 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 			conversionErr := func() error {
 				cache.streamSlots <- struct{}{}
 				defer func() { <-cache.streamSlots }()
-				if err := os.MkdirAll(s.originalCacheDir(), 0700); err != nil {
-					return err
-				}
 				// Linux subprocesses inherit the validated read-only descriptor,
 				// so a multi-GB source converts without a full copy first.
 				convErr := mediax.MakeCompatibleFileFragments(convCtx, source, job.temp, mode, caps)
@@ -275,6 +286,9 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 
 // pumpBrowserStream feeds w from the growing building file until the viewer
 // disconnects or the conversion finishes and the file has been fully sent.
+// A truncation (conversion restarted) rewinds the read offset, and the wait
+// for new data is unbounded: the conversion may be queued behind others on a
+// saturated machine, and the viewer chooses when to leave.
 func (s *Service) pumpBrowserStream(ctx context.Context, w io.Writer, job *browserStream) (sent bool, err error) {
 	var f *os.File
 	for i := 0; i < 100 && f == nil; i++ {
@@ -294,35 +308,68 @@ func (s *Service) pumpBrowserStream(ctx context.Context, w io.Writer, job *brows
 	var offset int64
 	buf := make([]byte, 128<<10)
 	for {
-		n, readErr := f.ReadAt(buf, offset)
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return offset > 0, writeErr
-			}
-			sent, offset = sent || n > 0, offset+int64(n)
+		info, statErr := f.Stat()
+		if statErr != nil {
+			return sent, statErr
 		}
-		if readErr == io.EOF || readErr == nil && n == 0 {
-			job.mu.Lock()
-			var finished bool
-			var jobErr error
-			select {
-			case <-job.done:
-				finished, jobErr = true, job.err
-			default:
+		if size := info.Size(); size < offset {
+			offset = 0 // The conversion restarted and truncated the file.
+		}
+		n := 0
+		if size := info.Size(); size > offset {
+			var readErr error
+			n, readErr = f.ReadAt(buf, offset)
+			if n > 0 {
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					return offset > 0, writeErr
+				}
+				sent, offset = true, offset+int64(n)
 			}
-			job.mu.Unlock()
-			if finished {
-				return sent, jobErr
+			if readErr != nil && readErr != io.EOF {
+				return sent, readErr
 			}
+		}
+		job.mu.Lock()
+		var finished bool
+		var jobErr error
+		select {
+		case <-job.done:
+			finished, jobErr = true, job.err
+		default:
+		}
+		job.mu.Unlock()
+		if finished {
+			// Drain anything written between the last read and completion.
+			info, statErr = f.Stat()
+			if statErr != nil {
+				return sent, statErr
+			}
+			remaining := info.Size() - offset
+			for remaining > 0 {
+				chunk := buf
+				if int64(len(chunk)) > remaining {
+					chunk = chunk[:remaining]
+				}
+				read, readErr := f.ReadAt(chunk, offset)
+				if read > 0 {
+					if _, writeErr := w.Write(chunk[:read]); writeErr != nil {
+						return true, writeErr
+					}
+					offset += int64(read)
+					remaining -= int64(read)
+				}
+				if readErr != nil {
+					break
+				}
+			}
+			return sent, jobErr
+		}
+		if n == 0 {
 			select {
 			case <-ctx.Done():
 				return sent, ctx.Err()
 			case <-time.After(150 * time.Millisecond):
 			}
-			continue
-		}
-		if readErr != nil && readErr != io.EOF {
-			return sent, readErr
 		}
 	}
 }
