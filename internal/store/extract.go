@@ -74,6 +74,9 @@ func (s *Service) ExtractStatus(abs string) *extractJob {
 
 // StartExtract queues an archive for extraction next to its own directory.
 func (s *Service) StartExtract(abs string) (*extractJob, error) {
+	if s.Log != nil {
+		s.Log.Warn("解压触发", "path", abs)
+	}
 	st, err := os.Stat(abs)
 	if err != nil || st.IsDir() {
 		return nil, errors.New("文件不存在或不是普通文件")
@@ -156,7 +159,8 @@ func (s *Service) runOneExtract(key string, job *extractJob) {
 func (s *Service) runExtractCommand(abs, out string, job *extractJob) error {
 	args := []string{"x", "-y", "-bd", "-bsp1", "-o" + out, abs}
 	cmd := exec.Command("7z", args...)
-	cmd.Stderr = nil
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -180,7 +184,7 @@ func (s *Service) runExtractCommand(abs, out string, job *extractJob) error {
 	if werr := cmd.Wait(); werr != nil {
 		var exit *exec.ExitError
 		if errors.As(werr, &exit) {
-			exitErr = "（code " + itoa(exit.ExitCode()) + "）"
+			exitErr = "（code " + itoa(exit.ExitCode()) + "）: " + strings.TrimSpace(stderr.String())
 		} else {
 			exitErr = werr.Error()
 		}
