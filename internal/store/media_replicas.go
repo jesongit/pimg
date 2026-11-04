@@ -721,7 +721,7 @@ func (s *Service) runMediaArchive(ctx context.Context, f *dbx.File, publish bool
 
 func (s *Service) queueMediaSync(f *dbx.File) error {
 	var missing bool
-	if err := s.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM json_each(?) target WHERE NOT EXISTS(SELECT 1 FROM media_replicas r WHERE r.file_id=? AND r.instance_id=target.value AND r.state='ready'))`, dbx.JSONValue(s.StoragePolicy().Archives), f.ID).Scan(&missing); err != nil {
+	if err := s.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM json_each(?) target WHERE NOT EXISTS(SELECT 1 FROM media_replicas r WHERE r.file_id=? AND r.instance_id=target.value AND r.state='ready'))`, dbx.JSONValue(s.activeArchives()), f.ID).Scan(&missing); err != nil {
 		return err
 	}
 	if !missing {
@@ -871,7 +871,7 @@ func (s *Service) purgeMedia(ctx context.Context, f *dbx.File, only string) erro
 
 func (s *Service) localMediaTarget(f *dbx.File) string {
 	for _, id := range s.StoragePolicy().Archives {
-		if i, e := s.instance(id); e == nil && i.row.Driver == "local" {
+		if i, e := s.instance(id); e == nil && i.row.Driver == "local" && i.row.Enabled {
 			return id
 		}
 	}

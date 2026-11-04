@@ -192,6 +192,65 @@ func TestMediaPlainUploadNeverEncryptedByStorage(t *testing.T) {
 	}
 }
 
+func TestReconcileDoesNotEnqueueForDisabledArchiveInstance(t *testing.T) {
+	ctx := context.Background()
+	s, peer, plain := peerFixture(t)
+	policy := s.StoragePolicy()
+	policy.Archives = []string{"local", peer}
+	if err := s.SaveStoragePolicy(policy); err != nil {
+		t.Fatal(err)
+	}
+	f, err := s.ReceiveUpload(ctx, bytes.NewReader(plain), "image.png", "png", sql.NullInt64{}, nil, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RunArchive(ctx, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RunArchiveSync(ctx, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	// A replica that is missing because its instance was disabled must not be
+	// demanded again: that sync task can never succeed and would re-enqueue
+	// forever (151k tasks/day observed online).
+	if _, err = s.DB.Exec(`DELETE FROM media_replicas WHERE file_id=? AND instance_id=?`, f.ID, peer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.DB.Exec(`DELETE FROM tasks WHERE file_id=?`, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	i, err := s.instance(peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveStorageInstance(peer, i.row.Name, "local", i.config, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReconcileStorage(); err != nil {
+		t.Fatal(err)
+	}
+	pending := func() int {
+		var n int
+		if e := s.DB.QueryRow(`SELECT COUNT(*) FROM tasks WHERE file_id=? AND type='archive_sync' AND state IN ('pending','running')`, f.ID).Scan(&n); e != nil {
+			t.Fatal(e)
+		}
+		return n
+	}
+	if n := pending(); n != 0 {
+		t.Fatalf("disabled instance still enqueues sync: %d", n)
+	}
+	// Re-enabling the instance must resume the normal requirement.
+	if _, err = s.SaveStorageInstance(peer, i.row.Name, "local", i.config, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReconcileStorage(); err != nil {
+		t.Fatal(err)
+	}
+	if n := pending(); n != 1 {
+		t.Fatalf("enabled instance must be reconciled: %d", n)
+	}
+}
+
 func TestMediaViewCreatesDurableLocalReplicaOutsideArchiveSelection(t *testing.T) {
 	ctx := context.Background()
 	s, _, plain := peerFixture(t)

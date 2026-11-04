@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // MakeCompatible only writes a disposable view. It never replaces an archive.
@@ -96,16 +98,30 @@ func MakeCompatibleFileFragments(ctx context.Context, source *os.File, dest, mod
 	var lastErr error
 	attempts := compatibleAttempts(info, mode, caps)
 	for _, attempt := range attempts {
+		hardware := len(attempt.globals) > 0
 		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1"}
 		args = append(args, attempt.globals...)
 		args = append(args, "-i", sourcePath)
 		args = append(args, attempt.args...)
 		args = append(args, "-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", dest)
-		if err = runVideoCommand(ctx, args); err == nil {
+		err := runConversionWithStallWatchdog(ctx, dest, func(ctx context.Context) error {
+			cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+			if runtime.GOOS == "linux" {
+				cmd.ExtraFiles = []*os.File{source}
+			}
+			return runVideoProcess(cmd)
+		})
+		if err == nil {
 			return nil
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if hardware {
+			// A GPU strategy that errors or stops producing output (driver
+			// hang) is switched off for the rest of the process; software
+			// always remains available.
+			hardwareDisabled.Store(true)
 		}
 		lastErr = err
 	}
@@ -113,67 +129,116 @@ func MakeCompatibleFileFragments(ctx context.Context, source *os.File, dest, mod
 }
 
 func makeCompatible(ctx context.Context, source string, file *os.File, dest, kind, mode string, caps BrowserCaps, progress func(float64)) error {
-	command := func(name string, args ...string) *exec.Cmd {
+	command := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, name, args...)
 		if file != nil {
 			cmd.ExtraFiles = []*os.File{file}
 		}
 		return cmd
 	}
-	args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1", "-i", source}
 	if kind == "image" {
 		if isHEIF(source) {
 			return heifPNG(ctx, source, dest, 8192)
 		}
-		args = append(args, "-frames:v", "1", "-f", "image2", "-c:v", "png", dest)
+		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1", "-i", source, "-frames:v", "1", "-f", "image2", "-c:v", "png", dest}
 		return runVideoCommand(ctx, args)
 	}
 	if kind != "video" {
 		return errors.New("此文件不能生成兼容查看版本")
 	}
-	info, err := inspectVideo(command("ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,color_transfer:format=duration,start_time,format_name", "-of", "json", source))
+	info, err := inspectVideo(command(ctx, "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,color_transfer:format=duration,start_time,format_name", "-of", "json", source))
 	if err != nil {
 		return err
 	}
 	var lastErr error
 	for _, attempt := range compatibleAttempts(info, mode, caps) {
+		hardware := len(attempt.globals) > 0
 		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1"}
 		args = append(args, attempt.globals...)
 		args = append(args, "-i", source)
 		args = append(args, attempt.args...)
 		args = append(args, "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", dest)
-		cmd := command("ffmpeg", args...)
-		var diagnostic limitedVideoDiagnostic
-		cmd.Stderr = &diagnostic
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return err
-		}
-		if err = cmd.Start(); err != nil {
-			return err
-		}
-		scan := bufio.NewScanner(stdout)
-		for scan.Scan() {
-			key, value, _ := strings.Cut(scan.Text(), "=")
-			if key == "out_time_us" && progress != nil {
-				micros, _ := strconv.ParseFloat(value, 64)
-				progress(math.Max(0, math.Min(0.99, micros/1e6/info.Duration)))
+		err := runConversionWithStallWatchdog(ctx, dest, func(ctx context.Context) error {
+			cmd := command(ctx, "ffmpeg", args...)
+			var diagnostic limitedVideoDiagnostic
+			cmd.Stderr = &diagnostic
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				return err
 			}
-		}
-		if scan.Err() != nil {
-			_ = cmd.Process.Kill()
-		}
-		if err = errors.Join(scan.Err(), cmd.Wait()); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+			if err = cmd.Start(); err != nil {
+				return err
 			}
-			// A failed strategy (e.g. GPU init) falls back to the next one.
-			lastErr = fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
-			continue
+			scan := bufio.NewScanner(stdout)
+			for scan.Scan() {
+				key, value, _ := strings.Cut(scan.Text(), "=")
+				if key == "out_time_us" && progress != nil {
+					micros, _ := strconv.ParseFloat(value, 64)
+					progress(math.Max(0, math.Min(0.99, micros/1e6/info.Duration)))
+				}
+			}
+			if scan.Err() != nil {
+				_ = cmd.Process.Kill()
+			}
+			if err = errors.Join(scan.Err(), cmd.Wait()); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 20000))
+			}
+			return nil
+		})
+		if err == nil {
+			return nil
 		}
-		return nil
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if hardware {
+			// A GPU strategy that errors or stalls is switched off for the rest
+			// of the process; software always remains available.
+			hardwareDisabled.Store(true)
+		}
+		lastErr = err
 	}
 	return lastErr
+}
+
+// runConversionWithStallWatchdog runs the conversion and kills it when the
+// output file stops growing: a hung GPU driver blocks inside kernel DRM
+// instead of failing, and would otherwise stall the attempt forever.
+func runConversionWithStallWatchdog(ctx context.Context, output string, run func(context.Context) error) error {
+	ctx2, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- run(ctx2) }()
+	var size int64 = -1
+	stalled := 0
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ctx.Done():
+			cancel()
+			<-done
+			return ctx.Err()
+		case <-ticker.C:
+			if st, err := os.Stat(output); err == nil {
+				if st.Size() == size {
+					stalled += 5
+				} else {
+					stalled, size = 0, st.Size()
+				}
+			}
+			if size >= 0 && stalled >= 60 {
+				cancel()
+				<-done
+				return errors.New("转码输出超过 60 秒没有增长，已中止本次尝试")
+			}
+		}
+	}
 }
 
 // encodeAttempt is one encoding strategy: extra global options plus the stream
@@ -193,6 +258,16 @@ var hardwareEncode = sync.OnceValue(func() bool {
 	_, err := os.Stat("/dev/dri/renderD128")
 	return err == nil
 })
+
+// hardwareDisabled latches after a hardware attempt failed or stopped
+// producing output (a hung GPU driver blocks in kernel DRM, not in ffmpeg):
+// the rest of the process lifetime stays on software instead of paying the
+// stall timeout for every video.
+var hardwareDisabled atomic.Bool
+
+func hardwareEncodeAvailable() bool {
+	return !hardwareDisabled.Load() && hardwareEncode()
+}
 
 // compatibleAttempts lists the encoding strategies in fallback order. A
 // supported picture is copied; only genuinely undecodable input is re-encoded,
@@ -214,7 +289,7 @@ func compatibleAttempts(info VideoInfo, mode string, caps BrowserCaps) []encodeA
 	}
 	audio := []string{"-c:a", "aac", "-b:a", "128k"}
 	software := encodeAttempt{args: append(append(append([]string{}, maps...), "-vf", filter, "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"), audio...)}
-	if !hardwareEncode() {
+	if !hardwareEncodeAvailable() {
 		return []encodeAttempt{software}
 	}
 	hardware := encodeAttempt{

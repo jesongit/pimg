@@ -84,7 +84,7 @@ func (s *Service) completeArchive(ctx context.Context, f *dbx.File) error {
 	if e = s.saveArchiveManifest(ctx, fresh, f.ColdBackend, revision, len(cs)); e != nil {
 		return e
 	}
-	for _, target := range s.StoragePolicy().Archives {
+	for _, target := range s.activeArchives() {
 		if target != f.ColdBackend {
 			if _, e = s.DB.EnqueueUniqueTask(dbx.TaskArchiveSync, f.ID, "{}"); e != nil {
 				return e
@@ -97,7 +97,7 @@ func (s *Service) completeArchive(ctx context.Context, f *dbx.File) error {
 }
 
 func (s *Service) ReconcileStorage() error {
-	rowsV2, errV2 := s.DB.Query(`SELECT f.id FROM files f WHERE f.media_version=2 AND f.archive_state='done' AND f.hidden=0 AND f.purge_state IS NULL AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.file_id=f.id AND t.type='archive_sync' AND t.state IN ('pending','running','failed','canceled')) AND EXISTS(SELECT 1 FROM json_each(?) target WHERE NOT EXISTS(SELECT 1 FROM media_replicas r WHERE r.file_id=f.id AND r.instance_id=target.value AND r.state='ready')) LIMIT 100`, dbx.JSONValue(s.StoragePolicy().Archives))
+	rowsV2, errV2 := s.DB.Query(`SELECT f.id FROM files f WHERE f.media_version=2 AND f.archive_state='done' AND f.hidden=0 AND f.purge_state IS NULL AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.file_id=f.id AND t.type='archive_sync' AND t.state IN ('pending','running','failed','canceled')) AND EXISTS(SELECT 1 FROM json_each(?) target WHERE NOT EXISTS(SELECT 1 FROM media_replicas r WHERE r.file_id=f.id AND r.instance_id=target.value AND r.state='ready')) LIMIT 100`, dbx.JSONValue(s.activeArchives()))
 	if errV2 != nil {
 		return errV2
 	}
@@ -123,8 +123,7 @@ func (s *Service) ReconcileStorage() error {
 	if err := s.QueueLocalLayouts(); err != nil {
 		return err
 	}
-	p := s.StoragePolicy()
-	rows, e := s.DB.Query(`SELECT f.id FROM files f JOIN cold_sync_revisions r ON r.file_id=f.id WHERE f.media_version=0 AND f.archive_state='done' AND f.hidden=0 AND f.purge_state IS NULL AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.file_id=f.id AND t.type='archive_sync' AND t.state IN ('pending','running','failed','canceled')) AND EXISTS(SELECT 1 FROM json_each(?) target WHERE NOT EXISTS(SELECT 1 FROM archive_manifests m WHERE m.file_id=f.id AND m.instance_id=target.value AND m.revision=CAST(r.revision AS TEXT))) ORDER BY f.id LIMIT 100`, dbx.JSONValue(p.Archives))
+	rows, e := s.DB.Query(`SELECT f.id FROM files f JOIN cold_sync_revisions r ON r.file_id=f.id WHERE f.media_version=0 AND f.archive_state='done' AND f.hidden=0 AND f.purge_state IS NULL AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.file_id=f.id AND t.type='archive_sync' AND t.state IN ('pending','running','failed','canceled')) AND EXISTS(SELECT 1 FROM json_each(?) target WHERE NOT EXISTS(SELECT 1 FROM archive_manifests m WHERE m.file_id=f.id AND m.instance_id=target.value AND m.revision=CAST(r.revision AS TEXT))) ORDER BY f.id LIMIT 100`, dbx.JSONValue(s.activeArchives()))
 	if e != nil {
 		return e
 	}

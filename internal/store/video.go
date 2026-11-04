@@ -54,7 +54,7 @@ func videoPlainBudget(f *dbx.File, wireLimit int64) int64 {
 // created by the archive worker, never by changing the uploaded bytes.
 func (s *Service) prepareUploadBatch(ctx context.Context, source *dbx.File) ([]*dbx.File, error) {
 	source.MediaVersion = 2
-	for _, target := range s.StoragePolicy().Archives {
+	for _, target := range s.activeArchives() {
 		policy, err := s.mediaPolicy(source, target)
 		if err != nil {
 			return nil, err

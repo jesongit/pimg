@@ -655,6 +655,27 @@ func (s *Service) rankedArchives() []string {
 	})
 	return p.Archives
 }
+
+// activeArchives returns only the enabled archive instances, in policy order.
+// Requirement checks (reconcile, queue decisions) must use this set: a
+// disabled instance is excluded from new storage choices, so demanding its
+// replica would enqueue a sync task that can never satisfy it and loop
+// forever.
+func (s *Service) activeArchives() []string {
+	p := s.StoragePolicy()
+	s.storages.mu.RLock()
+	defer s.storages.mu.RUnlock()
+	out := make([]string, 0, len(p.Archives))
+	for _, id := range p.Archives {
+		if i := s.storages.instances[id]; i != nil && i.row.Enabled {
+			out = append(out, id)
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		return s.storageLessLocked(out[a], out[b])
+	})
+	return out
+}
 func (s *Service) storageLessLocked(a, b string) bool {
 	x, y := s.storages.scores[a], s.storages.scores[b]
 	xbad, ybad := x.available != nil && !*x.available, y.available != nil && !*y.available

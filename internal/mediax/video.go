@@ -383,13 +383,15 @@ func splitVideo(ctx context.Context, source, ext, outputDir string, maxBytes int
 }
 
 func runVideoCommand(ctx context.Context, args []string) error {
-	var diagnostic limitedVideoDiagnostic
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	return runVideoProcess(cmd)
+}
+
+// runVideoProcess runs ffmpeg and reports a bounded slice of its stderr.
+func runVideoProcess(cmd *exec.Cmd) error {
+	var diagnostic limitedVideoDiagnostic
 	cmd.Stderr = &diagnostic
 	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
 		return fmt.Errorf("ffmpeg 视频处理失败: %s", truncate(diagnostic.Bytes(), 400))
 	}
 	return nil
