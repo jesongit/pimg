@@ -20,6 +20,7 @@ func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/file-browser/view", s.auth(s.handleBrowserView))
 	mux.HandleFunc("GET /api/admin/file-browser/content", s.auth(s.handleBrowserContent))
 	mux.HandleFunc("POST /api/admin/file-browser/extract", s.auth(s.handleBrowserExtract))
+	mux.HandleFunc("GET /api/admin/file-browser/extract", s.auth(s.handleBrowserExtractStatus))
 	mux.HandleFunc("GET /api/admin/file-browser/index", s.auth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		writeJSON(w, 200, s.Svc.BrowserIndexStatus())
@@ -53,6 +54,21 @@ func (s *Server) handleBrowserExtract(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, 202, job)
+}
+
+func (s *Server) handleBrowserExtractStatus(w http.ResponseWriter, r *http.Request) {
+	abs, err := s.Svc.AbsoluteBrowserPath(r.URL.Query().Get("path"))
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	job := s.Svc.ExtractStatus(abs)
+	if job == nil {
+		fail(w, 404, "无进行中的解压")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, job)
 }
 
 func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +304,10 @@ func (s *Server) handleBrowserContent(w http.ResponseWriter, r *http.Request) {
 	}
 	file, entry, err := s.Svc.OpenBrowserContent(q.Get("path"), q.Get("version"), mode)
 	if err != nil {
+		if s.Log != nil {
+			// diagnose problematic playbacks: which file, mode and stream flag
+			s.Log.Warn("content 未就绪", "path", q.Get("path"), "compatible", mode, "stream", q.Get("stream"), "err", err.Error())
+		}
 		fail(w, 409, "文件已变化、不可读取或兼容版本未就绪，请刷新或重新打开文件")
 		return
 	}

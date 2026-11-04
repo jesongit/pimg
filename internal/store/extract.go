@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bufio"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +22,7 @@ type extractJob struct {
 	Ok      bool   `json:"ok"`
 	Error   string `json:"error,omitempty"`
 	Target  string `json:"target"`
+	Percent int    `json:"percent"`
 	done    chan struct{}
 }
 
@@ -57,6 +60,16 @@ func ArchiveFile(ext string) bool {
 		return true
 	}
 	return false
+}
+
+// ExtractStatus returns the current extraction job for an archive path.
+func (s *Service) ExtractStatus(abs string) *extractJob {
+	key := filepath.Clean(abs)
+	if j := s.extract.getJob(key); j != nil {
+		c := *j
+		return &c
+	}
+	return nil
 }
 
 // StartExtract queues an archive for extraction next to its own directory.
@@ -97,7 +110,7 @@ func (s *Service) runOneExtract(key string, job *extractJob) {
 	queue := filepath.Join(filepath.Dir(abs), ".pimg-extract-"+filepath.Base(abs))
 	_ = os.RemoveAll(queue)
 	_ = os.MkdirAll(queue, 0700)
-	err := s.runExtractCommand(abs, queue)
+	err := s.runExtractCommand(abs, queue, job)
 	if err != nil {
 		_ = os.RemoveAll(queue)
 		e := s.extract
@@ -136,23 +149,63 @@ func (s *Service) runOneExtract(key string, job *extractJob) {
 	}
 	e := s.extract
 	e.mu.Lock()
-	job.Done, job.Ok, job.Target, job.Error = true, true, finalized, ""
+	job.Done, job.Ok, job.Target, job.Error, job.Percent = true, true, finalized, "", 100
 	e.mu.Unlock()
 }
 
-func (s *Service) runExtractCommand(abs, out string) error {
-	args := []string{"x", "-y", "-bd", "-o" + out, abs}
+func (s *Service) runExtractCommand(abs, out string, job *extractJob) error {
+	args := []string{"x", "-y", "-bd", "-bsp1", "-o" + out, abs}
 	cmd := exec.Command("7z", args...)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return errors.New("解压失败（" + itoa(exit.ExitCode()) + "）: " + strings.TrimSpace(stderr.String()))
-		}
+	cmd.Stderr = nil
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
 		return err
 	}
+	if err = cmd.Start(); err != nil {
+		return err
+	}
+	// 7z -bsp1 prints lines like " 23%  12 of 100..." ; parse the trailing %.
+	sc := bufio.NewScanner(stdout)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if pct := parse7zPercent(line); pct >= 0 {
+			e := s.extract
+			e.mu.Lock()
+			job.Percent = pct
+			e.mu.Unlock()
+		}
+	}
+	scErr := sc.Err()
+	var exitErr string
+	if werr := cmd.Wait(); werr != nil {
+		var exit *exec.ExitError
+		if errors.As(werr, &exit) {
+			exitErr = "（code " + itoa(exit.ExitCode()) + "）"
+		} else {
+			exitErr = werr.Error()
+		}
+	}
+	if scErr != nil {
+		return errors.New("解压进度读取失败: " + scErr.Error())
+	}
+	if exitErr != "" {
+		return errors.New("解压失败" + exitErr)
+	}
 	return nil
+}
+
+// parse7zPercent extracts a bare percentage from a 7z progress line, e.g.
+// " 43%  110 of 300" → 43. Lines without a trailing % yield -1.
+func parse7zPercent(line string) int {
+	if i := strings.LastIndex(line, "%"); i >= 0 {
+		var n int
+		if _, err := fmt.Sscanf(line[:i], "%d", &n); err == nil {
+			if n >= 0 && n <= 100 {
+				return n
+			}
+		}
+	}
+	return -1
 }
 
 func itoa(v int) string {

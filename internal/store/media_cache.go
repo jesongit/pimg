@@ -519,6 +519,13 @@ func (s *Service) CleanupMediaCacheResult() (int, error) {
 			break
 		}
 	}
+	// A building file with no live stream is an orphan (a viewer disconnected
+	// before the conversion could finalize or clean up); drop it so the next
+	// play regenerates rather than acting on a stale tombstone.
+	activeBuildings := map[string]bool{}
+	for _, j := range s.media.streams {
+		activeBuildings[filepath.Base(j.temp)] = true
+	}
 	var files []os.FileInfo
 	var total int64
 	for _, entry := range entries {
@@ -527,6 +534,14 @@ func (s *Service) CleanupMediaCacheResult() (int, error) {
 			continue
 		}
 		path := filepath.Join(s.originalCacheDir(), entry.Name())
+		if filepath.Ext(entry.Name()) == ".building" {
+			if !activeBuildings[entry.Name()] {
+				if os.Remove(path) == nil {
+					removed++
+				}
+			}
+			continue
+		}
 		if filepath.Ext(entry.Name()) == ".part" {
 			if !active {
 				if os.Remove(path) == nil {

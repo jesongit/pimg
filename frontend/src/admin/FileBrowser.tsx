@@ -160,18 +160,32 @@ export default function FileBrowser() {
     else if (entry.kind !== "other") setDetail(entry.path);
   };
   const isArchive = (entry: BrowserEntry) => !entry.directory && /^(zip|rar|7z|iso)$/i.test(entry.ext);
-  const [extracting, setExtracting] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState<Record<string, number>>({});
   const extractArchive = async (entry: BrowserEntry) => {
-    if (!isArchive(entry) || extracting) return;
-    setExtracting(entry.path);
+    if (!isArchive(entry) || extracting[entry.path] !== undefined) return;
+    setExtracting(prev => ({ ...prev, [entry.path]: 0 }));
     try {
-      const job = await api.post<{ done: boolean; ok: boolean; error?: string; target?: string }>("/admin/file-browser/extract", { path: entry.path });
-      if (job.ok) toast(`已解压到 ${job.target}`, "ok");
-      else if (job.done) toast(job.error || "解压失败", "err");
-      else toast("正在后台解压，请稍后刷新目录查看", "ok");
+      const job = await api.post<{ done: boolean; ok: boolean; error?: string; target?: string; percent?: number }>("/admin/file-browser/extract", { path: entry.path });
+      if (job.ok) { toast(`已解压到 ${job.target}`, "ok"); setExtracting(prev => { const n = { ...prev }; delete n[entry.path]; return n; }); return; }
+      if (job.done) { toast(job.error || "解压失败", "err"); setExtracting(prev => { const n = { ...prev }; delete n[entry.path]; return n; }); return; }
+      toast("开始后台解压…", "ok");
+      // poll progress until done
+      const timer = window.setInterval(async () => {
+        try {
+          const st = await api.get<{ done: boolean; ok: boolean; error?: string; percent?: number; target?: string }>(`/admin/file-browser/extract?${new URLSearchParams({ path: entry.path })}`);
+          if (st.done) {
+            window.clearInterval(timer);
+            if (st.ok) toast(`已解压到 ${st.target}`, "ok"); else toast(st.error || "解压失败", "err");
+            setExtracting(prev => { const n = { ...prev }; delete n[entry.path]; return n; });
+          } else {
+            setExtracting(prev => ({ ...prev, [entry.path]: st.percent ?? -1 }));
+          }
+        } catch { /* keep polling */ }
+      }, 1500);
     } catch (err) {
       toast(err instanceof Error ? err.message : "解压失败", "err");
-    } finally { setExtracting(null); }
+      setExtracting(prev => { const n = { ...prev }; delete n[entry.path]; return n; });
+    }
   };
   return <section className={`file-browser${selected.size ? " has-selection" : ""}`}>
     <h1 className="sr-only">文件</h1>
@@ -204,7 +218,7 @@ export default function FileBrowser() {
             <thead><tr><th scope="col"><span className="sr-only">选择</span></th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}</tr></thead>
             <tbody>{items.map(entry => <tr key={entry.path + entry.version} data-file-id={entry.path} data-selection-disabled={!entry.importable ? "true" : undefined} className={`browser-row${selected.has(entry.path) ? " selected" : ""}`} onClick={event => { if (!(event.target as HTMLElement).closest("button,a,input")) openEntry(entry, event.shiftKey); }}>
               <td className="browser-select-cell">{entry.importable && <button type="button" className="browser-row-check" role="checkbox" aria-checked={selected.has(entry.path)} aria-label={`选择文件 ${entry.name}`} onClick={event => toggle(entry, event.shiftKey)}><span className="check" data-on={selected.has(entry.path)}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</td>
-              <td className="browser-name-cell"><div className="browser-name-row-wrap"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other" && !isArchive(entry)} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={browserPathLabel(entry.path)} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" && !isArchive(entry) ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button>{isArchive(entry) ? <button type="button" className="browser-extract-btn" aria-label={`解压 ${entry.name}`} title="解压到当前目录旁" disabled={!!extracting} onClick={event => { event.stopPropagation(); void extractArchive(entry); }}><IconDownload size={16} /></button> : null}</div></td>
+              <td className="browser-name-cell"><div className="browser-name-row-wrap"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other" && !isArchive(entry)} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={browserPathLabel(entry.path)} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" && !isArchive(entry) ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button>{isArchive(entry) ? <button type="button" className="browser-extract-btn" aria-label={`解压 ${entry.name}`} title={extracting[entry.path] !== undefined ? `解压 ${entry.name} 中 ${extracting[entry.path] >= 0 ? extracting[entry.path] + "%" : "…"}` : "解压到当前目录旁"} disabled={extracting[entry.path] !== undefined} onClick={event => { event.stopPropagation(); void extractArchive(entry); }}>{extracting[entry.path] !== undefined ? <span className="browser-extract-label">{extracting[entry.path] >= 0 ? `${extracting[entry.path]}%` : "解压中"}</span> : <IconDownload size={16} />}</button> : null}</div></td>
               <td className="browser-type-cell" title={entry.directory ? "文件夹" : entry.mime}>{entry.directory ? "文件夹" : entry.ext.toUpperCase() || "文件"}</td>
               <td className="browser-size-cell">{entry.directory ? "—" : fmtSize(entry.size)}</td>
               <td className="browser-created-cell" data-label="创建" title={entry.created_at ? new Date(entry.created_at * 1000).toLocaleString() : "文件系统未提供创建时间"}>{fileTime(entry.created_at)}</td>
