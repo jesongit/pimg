@@ -1,5 +1,6 @@
 import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { IconArrowDown, IconArrowUp, IconChevronRight, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconDownload, IconFolderPlus, IconLink, IconX } from "@tabler/icons-react";
 import { api, fmtSize } from "../api";
@@ -129,10 +130,11 @@ export default function FileBrowser() {
   const selectable = files.filter(entry => entry.importable), media = files.filter(entry => entry.kind === "image" || entry.kind === "video");
   const allSelected = selectable.length > 0 && selectable.every(entry => selected.has(entry.path));
   const toggle = (entry: BrowserEntry, range = false) => {
-    if (!entry.importable) return;
-    const start = range && anchor.current ? selectable.findIndex(value => value.path === anchor.current) : -1;
-    const end = selectable.findIndex(value => value.path === entry.path);
-    const targets = start >= 0 ? selectable.slice(Math.min(start, end), Math.max(start, end) + 1).map(value => value.path) : [entry.path];
+    if (entry.directory && entry.kind === "other" && archiveFileExt(entry.ext)) return;
+    const scope = items;
+    const start = range && anchor.current ? scope.findIndex(value => value.path === anchor.current) : -1;
+    const end = scope.findIndex(value => value.path === entry.path);
+    const targets = start >= 0 ? scope.slice(Math.min(start, end), Math.max(start, end) + 1).map(value => value.path) : [entry.path];
     setSelected(previous => { const next = new Set(previous); if (start >= 0) targets.forEach(value => next.add(value)); else next.has(entry.path) ? next.delete(entry.path) : next.add(entry.path); return next; });
     anchor.current = entry.path;
   };
@@ -151,7 +153,9 @@ export default function FileBrowser() {
     else if (entry.kind !== "other") setDetail(entry.path);
   };
   const isArchive = (entry: BrowserEntry) => !entry.directory && /^(zip|rar|7z|iso)$/i.test(entry.ext);
+  const archiveFileExt = (ext: string) => /^(zip|rar|7z|iso)$/i.test(ext);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsPos, setToolsPos] = useState({ top: 0, left: 0 });
   const [mkdirOpen, setMkdirOpen] = useState(false), [mkdirName, setMkdirName] = useState(""), [mkdirBusy, setMkdirBusy] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false), [linkTarget, setLinkTarget] = useState(""), [linkBusy, setLinkBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -221,11 +225,11 @@ export default function FileBrowser() {
         <span className="file-browser-readonly">源文件只读</span>
         <button type="button" className="btn" disabled={!data || loading || !!query} title={query ? "清除搜索后可导入当前目录" : "选择相册后导入，可包含子目录"} onClick={() => data && importPaths([data.path], true)}>导入当前目录</button>
         <div ref={menuRef} className="browser-tools-menu-wrap">
-          <button type="button" className="btn btn-ghost browser-tools-menu-trigger" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => setToolsOpen(v => !v)}>操作</button>
-          {toolsOpen && <div className="browser-tools-menu" role="menu">
+          <button type="button" className="btn btn-ghost browser-tools-menu-trigger" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={event => { setToolsOpen(v => !v); const r = (event.currentTarget as HTMLElement).getBoundingClientRect(); setToolsPos({ top: r.bottom + 6, left: r.right - 180 }); }}>操作<i aria-hidden="true" style={{fontStyle:"normal",marginLeft:4}}>▾</i></button>
+          {toolsOpen && createPortal(<div className="browser-tools-menu" role="menu" style={{ position: "fixed", top: toolsPos.top, left: toolsPos.left, zIndex: 9999 }}>
             <button type="button" role="menuitem" onClick={() => { setToolsOpen(false); setMkdirOpen(true); }}><IconFolderPlus size={16} />新建文件夹</button>
             <button type="button" role="menuitem" disabled={!selected.size} title={selected.size ? "" : "请先勾选要硬链接的文件或文件夹"} onClick={() => { setToolsOpen(false); setLinkTarget(data?.path || ""); setLinkOpen(true); }}><IconLink size={16} />硬链接选中项</button>
-          </div>}
+          </div>, document.body)}
         </div>
       </div>
     </div>
@@ -239,7 +243,7 @@ export default function FileBrowser() {
             <colgroup><col className="browser-check-column" />{columns.map(column => <col key={column.asc} className={column.className} />)}</colgroup>
             <thead><tr><th scope="col" className="browser-check-column">{items.length > 0 && <button type="button" role="checkbox" aria-checked={allItemsSelected ? "true" : selected.size > 0 ? "mixed" : "false"} aria-label="全选当前列表（含文件夹）" className="browser-row-check browser-select-all" onClick={() => setSelected(allItemsSelected ? new Set() : new Set(items.map(item => item.path)))}><span className="check" data-on={allItemsSelected} data-indeterminate={!allItemsSelected && selected.size > 0}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}</tr></thead>
             <tbody>{items.map(entry => <tr key={entry.path + entry.version} data-file-id={entry.path} data-selection-disabled={!entry.importable ? "true" : undefined} className={`browser-row${selected.has(entry.path) ? " selected" : ""}`} onClick={event => { if (!(event.target as HTMLElement).closest("button,a,input")) openEntry(entry, event.shiftKey); }}>
-              <td className="browser-select-cell">{entry.importable && <button type="button" className="browser-row-check" role="checkbox" aria-checked={selected.has(entry.path)} aria-label={`选择文件 ${entry.name}`} onClick={event => toggle(entry, event.shiftKey)}><span className="check" data-on={selected.has(entry.path)}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</td>
+              <td className="browser-select-cell"><button type="button" className="browser-row-check" role="checkbox" aria-checked={selected.has(entry.path)} aria-label={`选择 ${entry.directory ? "文件夹" : "文件"} ${entry.name}`} onClick={event => toggle(entry, event.shiftKey)}><span className="check" data-on={selected.has(entry.path)}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button></td>
               <td className="browser-name-cell"><div className="browser-name-row-wrap"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other" && !isArchive(entry)} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={browserPathLabel(entry.path)} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" && !isArchive(entry) ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button>{isArchive(entry) ? <button type="button" className="browser-extract-btn" aria-label={`解压 ${entry.name}`} title={extracting[entry.path] !== undefined ? `解压 ${entry.name} 中 ${extracting[entry.path] >= 0 ? extracting[entry.path] + "%" : "…"}` : "解压到当前目录旁"} disabled={extracting[entry.path] !== undefined} onClick={event => { event.stopPropagation(); void extractArchive(entry); }}>{extracting[entry.path] !== undefined ? <span className="browser-extract-label">{extracting[entry.path] >= 0 ? `${extracting[entry.path]}%` : "解压中"}</span> : <IconDownload size={16} />}</button> : null}</div></td>
               <td className="browser-type-cell" title={entry.directory ? "文件夹" : entry.mime}>{entry.directory ? "文件夹" : entry.ext.toUpperCase() || "文件"}</td>
               <td className="browser-size-cell">{entry.directory ? "—" : fmtSize(entry.size)}</td>
