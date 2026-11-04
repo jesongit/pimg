@@ -165,14 +165,14 @@ export default function FileBrowser() {
     if (!isArchive(entry) || extracting[entry.path] !== undefined) return;
     setExtracting(prev => ({ ...prev, [entry.path]: 0 }));
     try {
-      const job = await api.post<{ done: boolean; ok: boolean; error?: string; target?: string; percent?: number }>("/admin/file-browser/extract", { path: entry.path });
+      const job = await api.post<{ done: boolean; ok: boolean; error?: string; target?: string; percent?: number }>(`${browserBase}/extract`, { path: entry.path });
       if (job.ok) { toast(`已解压到 ${job.target}`, "ok"); setExtracting(prev => { const n = { ...prev }; delete n[entry.path]; return n; }); return; }
       if (job.done) { toast(job.error || "解压失败", "err"); setExtracting(prev => { const n = { ...prev }; delete n[entry.path]; return n; }); return; }
       toast("开始后台解压…", "ok");
       // poll progress until done
       const timer = window.setInterval(async () => {
         try {
-          const st = await api.get<{ done: boolean; ok: boolean; error?: string; percent?: number; target?: string }>(`/admin/file-browser/extract?${new URLSearchParams({ path: entry.path })}`);
+          const st = await api.get<{ done: boolean; ok: boolean; error?: string; percent?: number; target?: string }>(`${browserBase}/extract?${new URLSearchParams({ path: entry.path })}`);
           if (st.done) {
             window.clearInterval(timer);
             if (st.ok) toast(`已解压到 ${st.target}`, "ok"); else toast(st.error || "解压失败", "err");
