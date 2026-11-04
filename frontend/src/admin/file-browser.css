@@ -55,3 +55,14 @@
 .browser-tools-menu svg{flex-shrink:0}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
 .browser-select-all{padding:0}
+
+/* 收藏栏：搜索框与文件列表之间，单行横向，溢出收进更多 */
+.file-browser-bookmarks-bar{display:flex;align-items:center;gap:2px;min-height:38px;padding:2px 10px;border:1px solid var(--hairline);border-radius:var(--r-m);background:var(--raised);margin-bottom:14px;overflow:hidden;white-space:nowrap}
+.file-browser-bookmarks-bar-item{flex-shrink:0;display:flex;align-items:center}
+.file-browser-bookmarks-bar-item .text-button{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;font-size:var(--fs-s)}
+.file-browser-bookmarks-bar-item+.file-browser-bookmarks-bar-item::before{content:"·";color:var(--ink-3);margin-right:2px}
+.file-browser-bookmarks-more{flex-shrink:0}
+.file-bookmarks-empty-hint{font-size:var(--fs-s);color:var(--ink-3)}
+.file-bookmarks-more-list{position:fixed;z-index:999999;min-width:220px;max-height:60vh;overflow:auto;background:#ffffff;color:#1f2a33;border:1px solid #cbd5df;border-radius:8px;padding:4px;box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;flex-direction:column}
+.file-bookmarks-more-list button{display:flex;align-items:center;gap:8px;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:9px 12px;border:0;border-radius:6px;background:transparent;color:#1f2a33;font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.file-bookmarks-more-list button:hover{background:#f0f2f5}

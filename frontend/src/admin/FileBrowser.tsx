@@ -2,7 +2,7 @@ import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
-import { IconArrowDown, IconArrowUp, IconChevronRight, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconDownload, IconFolderPlus, IconLink, IconX } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowUp, IconChevronDown, IconChevronRight, IconDots, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconDownload, IconFolderPlus, IconLink, IconStar, IconStarFilled, IconUpload, IconX } from "@tabler/icons-react";
 import { api, fmtSize } from "../api";
 import type { BrowserIndexStatus } from "../api";
 import { useGallery } from "./GalleryScope";
@@ -12,6 +12,7 @@ import LocalImport from "./LocalImport";
 import BrowserViewer from "./BrowserViewer";
 import MediaFullscreenSession from "../media/MediaFullscreenSession";
 import useDragSelection from "./useDragSelection";
+import { useFileBookmarks } from "./FileBookmarks";
 import { browserBase, browserPathLabel } from "./browserMedia";
 import type { BrowserEntry, BrowserListing } from "./browserMedia";
 import "./file-browser.css";
@@ -45,6 +46,49 @@ export default function FileBrowser() {
   const requestedSort = params.get("sort") || "name", sort = columns.some(column => requestedSort === column.asc || requestedSort === column.desc) ? requestedSort : "name";
   const [search, setSearch] = useState(query);
   const [data, setData] = useState<BrowserListing | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const bookmarks = useFileBookmarks(storageKey, data ? data.breadcrumbs[data.breadcrumbs.length - 1] || { path: data.path, name: data.path } : null);
+  const [visibleBookmarks, setVisibleBookmarks] = useState(bookmarks.locations);
+  const [overflowBookmarks, setOverflowBookmarks] = useState<typeof bookmarks.locations>([]);
+  const [moreOpen, setMoreOpen] = useState(false), [morePos, setMorePos] = useState({ top: 0, left: 0 });
+  const bookmarksBarRef = useRef<HTMLDivElement>(null), bookmarksMoreRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    setMoreOpen(false);
+    setVisibleBookmarks(bookmarks.locations);
+    setOverflowBookmarks([]);
+  }, [bookmarks.locations]);
+  useEffect(() => {
+    // 把放不进第一行的收藏项收进「更多」弹层。签名比较避免重排震荡。
+    const bar = bookmarksBarRef.current;
+    if (!bar) return;
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const nodes = bar.querySelectorAll<HTMLElement>(".file-bookmarks-bar-item");
+      const shown = nodes.length && nodes[0].offsetTop <= 4
+        ? Array.from(nodes).filter(node => node.offsetTop <= 4).map(node => node.dataset.path!)
+        : [];
+      const overflow = bookmarks.locations.filter(l => !shown.includes(l.path));
+      setVisibleBookmarks(previous => {
+        const same = previous.length === shown.length && shown.every(p => previous.some(l => l.path === p));
+        return same ? previous : bookmarks.locations.filter(l => shown.includes(l.path));
+      });
+      setOverflowBookmarks(previous => {
+        const same = previous.length === overflow.length && overflow.every(l => previous.some(o => o.path === l.path));
+        return same ? previous : overflow;
+      });
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    schedule();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(bar);
+    return () => { observer.disconnect(); if (raf) cancelAnimationFrame(raf); };
+  }, [bookmarks.locations]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (event: MouseEvent) => { if (!bookmarksMoreRef.current?.contains(event.target as Node) && !(event.target as HTMLElement).closest(".file-bookmarks-more-list")) setMoreOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [moreOpen]);
   const [revision, setRevision] = useState(0), [more, setMore] = useState(false);
   const [indexChanged, setIndexChanged] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set()), [detail, setDetail] = useState<string | null>(null);
@@ -218,23 +262,32 @@ export default function FileBrowser() {
       <div className="file-browser-navigation">
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-up" aria-label="上一级" title="上一级" disabled={!data || data.parent === data.path || loading} onClick={() => data && visit(data.parent)}><IconArrowUp size={17} /></button>
         <nav ref={breadcrumbs} className="file-browser-breadcrumbs" aria-label="文件夹路径">{folderNav.map((item, index) => <span key={item.path}>{index > 0 && <IconChevronRight size={13} />}<button type="button" className="text-button" title={item.path} aria-current={index === folderNav.length - 1 ? "location" : undefined} onClick={() => visit(item.path)}>{item.name}</button></span>)}</nav>
+        <button type="button" className="btn btn-ghost file-browser-icon" aria-label={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} title={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} aria-pressed={bookmarks.saved} disabled={!data || loading} onClick={bookmarks.toggle}>{bookmarks.saved ? <IconStarFilled size={17} /> : <IconStar size={17} />}</button>
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-expand" aria-label={recursive ? "收起所有文件" : "展开所有文件"} title={data && data.parent === data.path || isRootPath(path) ? "根目录不支持展开，请先进入子文件夹" : recursive ? "收起所有文件，返回逐层浏览" : "展开当前目录及子目录中的所有图片和视频"} aria-pressed={recursive} disabled={loading || !data && !recursive || !!data && data.parent === data.path || isRootPath(path)} onClick={toggleExpanded}><IconFolders size={17} /></button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label="刷新目录" title="刷新目录" disabled={loading} onClick={() => void refresh()}><IconRefresh size={17} /></button>
-      </div>
-      <div className="file-browser-actions">
-        <SelectAllControl checked={allSelected} indeterminate={selected.size > 0 && !allSelected} disabled={!selectable.length || loading} scope="全选已加载的可导入文件" onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(entry => entry.path)))} />
-        <label className="file-browser-search"><IconSearch size={16} /><input className="input" aria-label={recursive ? "搜索所有图片和视频" : "搜索当前目录"} placeholder={recursive ? "搜索所有图片和视频" : "搜索当前目录"} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="btn btn-ghost" aria-label="清除文件搜索" onClick={() => setSearch("")}><IconX size={15} /></button>}</label>
-        <span className="file-browser-count" role="status">{data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : ""}</span>
-        <span className="file-browser-readonly">源文件只读</span>
-        <button type="button" className="btn" disabled={!data || loading || !!query} title={query ? "清除搜索后可导入当前目录" : "选择相册后导入，可包含子目录"} onClick={() => data && importPaths([data.path], true)}>导入当前目录</button>
+        <button type="button" className="btn btn-ghost file-browser-icon" aria-label="导入当前目录" title="导入当前目录（可包含子目录）" disabled={!data || loading || !!query} onClick={() => data && importPaths([data.path], true)}><IconUpload size={17} /></button>
         <div ref={menuRef} className="browser-tools-menu-wrap">
-          <button type="button" className="btn btn-ghost browser-tools-menu-trigger" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={event => { setToolsOpen(v => !v); const r = (event.currentTarget as HTMLElement).getBoundingClientRect(); setToolsPos({ top: r.bottom + 6, left: r.right - 180 }); }}>操作<i aria-hidden="true" style={{fontStyle:"normal",marginLeft:4}}>▾</i></button>
+          <button type="button" className="btn btn-ghost file-browser-icon" aria-label="操作" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={event => { setToolsOpen(v => !v); const r = (event.currentTarget as HTMLElement).getBoundingClientRect(); setToolsPos({ top: r.bottom + 6, left: r.right - 180 }); }}><IconDots size={17} /></button>
           {toolsOpen && createPortal(<div ref={menuPortalRef} role="menu" style={{ position: "fixed", top: toolsPos.top, left: toolsPos.left, zIndex: 999999, minWidth: 170, width: "max-content", background: "#ffffff", color: "#1f2a33", border: "1px solid #cbd5df", borderRadius: 8, padding: 4, boxShadow: "0 8px 30px rgba(0,0,0,.3)", display: "flex", flexDirection: "column" }}>
             <button type="button" role="menuitem" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", whiteSpace: "nowrap", padding: "9px 12px", border: 0, borderRadius: 6, background: "transparent", color: "#1f2a33", font: "inherit", fontSize: 13, cursor: "pointer" }} onClick={() => { setToolsOpen(false); setMkdirOpen(true); }}><IconFolderPlus size={16} />新建文件夹</button>
             <button type="button" role="menuitem" disabled={!selected.size} title={selected.size ? "" : "请先勾选要硬链接的文件或文件夹"} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", whiteSpace: "nowrap", padding: "9px 12px", border: 0, borderRadius: 6, background: "transparent", color: "#1f2a33", font: "inherit", fontSize: 13, cursor: "pointer", opacity: selected.size ? 1 : .45 }} onClick={() => { setToolsOpen(false); setLinkTarget(data?.path || ""); setLinkOpen(true); }}><IconLink size={16} />硬链接选中项</button>
           </div>, document.body)}
         </div>
       </div>
+      <div className="file-browser-actions">
+        <SelectAllControl checked={allSelected} indeterminate={selected.size > 0 && !allSelected} disabled={!selectable.length || loading} scope="全选已加载的可导入文件" onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(entry => entry.path)))} />
+        <label className="file-browser-search"><IconSearch size={16} /><input className="input" aria-label={recursive ? "搜索所有图片和视频" : "搜索当前目录"} placeholder={recursive ? "搜索所有图片和视频" : "搜索当前目录"} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="btn btn-ghost" aria-label="清除文件搜索" onClick={() => setSearch("")}><IconX size={15} /></button>}</label>
+        <span className="file-browser-count" role="status">{data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : ""}</span>
+      </div>
+    </div>
+    <div className="file-browser-bookmarks-bar" role="toolbar" aria-label="收藏栏" ref={bookmarksBarRef}>
+      {bookmarks.locations.length ? <>
+        {visibleBookmarks.map(item => <div key={item.path} className="file-bookmarks-bar-item" data-path={item.path}><button type="button" className="text-button" title={browserPathLabel(item.path)} onClick={() => visit(item.path)}>{item.name || browserPathLabel(item.path)}</button></div>)}
+        {overflowBookmarks.length > 0 && <button type="button" ref={bookmarksMoreRef} className="btn btn-ghost file-browser-icon file-bookmarks-more" aria-label="更多收藏" aria-haspopup="menu" aria-expanded={moreOpen} title="更多收藏" onClick={event => { const r = (event.currentTarget as HTMLElement).getBoundingClientRect(); setMorePos({ top: r.bottom + 6, left: r.right - 220 }); setMoreOpen(v => !v); }}><IconChevronDown size={15} /></button>}
+        {moreOpen && overflowBookmarks.length > 0 && createPortal(<div className="file-bookmarks-more-list" style={{ position: "fixed", top: morePos.top, left: morePos.left, zIndex: 999999 }}>
+          {overflowBookmarks.map(item => <button type="button" key={item.path} title={browserPathLabel(item.path)} onClick={() => { setMoreOpen(false); visit(item.path); }}>{item.name || browserPathLabel(item.path)}</button>)}
+        </div>, document.body)}
+      </> : <span className="file-bookmarks-empty-hint">尚未收藏目录；点星标收藏后显示在这里</span>}
     </div>
     <div className="file-browser-content" aria-busy={loading}>
       {data?.indexed && <FloatingFeedback className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</FloatingFeedback>}
