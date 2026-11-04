@@ -20,3 +20,13 @@
 .media-progress-edge input:disabled{cursor:default}
 @media(max-width:420px){.media-control-buttons{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(pointer:coarse){.media-progress-edge,.media-progress-edge input{height:44px}}
+
+/* Audio-as-video waveform overlay */
+.media-spectrum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:3px;pointer-events:none;opacity:.85}
+.media-spectrum::after{content:attr(data-label);position:absolute;left:0;right:0;top:10px;text-align:center;font-size:13px;color:#dfe5ec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media-spectrum span{width:6px;height:16px;border-radius:2px;background:linear-gradient(#9cc,#69c);display:inline-block;animation:spectrum-bounce 1s ease-in-out infinite}
+.media-spectrum.is-paused span{animation-play-state:paused;height:8px}
+.media-spectrum span:nth-child(2n){animation-delay:.15s}
+.media-spectrum span:nth-child(3n){animation-delay:.3s}
+.media-spectrum span:nth-child(4n){animation-delay:.45s}
+@keyframes spectrum-bounce{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1.3)}}

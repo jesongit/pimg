@@ -62,6 +62,8 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
   const copyController = useRef<AbortController>();
   useEffect(() => { setCopying(false);setCopied(false); return () => { copyController.current?.abort(); copyController.current = undefined; }; }, [file.id]);
   const video = file.kind === "video", enabled = file.archive_state === "done" && !blocked;
+  // Audio is served as a companion video (black frame + audio); show a spectrum.
+  const isAudio = video && /^(mp3|flac|wav|m4a|aac|ogg|opus|wma|aiff|mka)$/i.test(file.ext);
   const autoLoad = !!sourceAdapter?.autoLoad;
   const [requested, setRequested] = useState(autoLoad || !video && !!file.local_ready), [attempt, setAttempt] = useState(0);
   const [stage, setStage] = useState<Stage>("idle"), [percent, setPercent] = useState(0);
@@ -216,6 +218,7 @@ export default function MediaViewer({ file, blocked, status, actions, notice, on
       {!visible && preview && !previewFailed && <img className="media-cover media-visual" src={preview} alt={file.name} width={file.thumb_w || undefined} height={file.thumb_h || undefined} decoding="async" onLoad={zoom.constrain} onError={() => setPreviewFailed(true)} />}
       {!visible && (!preview || previewFailed) && !autoLoad && <div className="preview-message"><p>{blocked || (file.archive_state === "failed" ? "归档失败，请重试归档" : file.archive_state !== "done" ? "归档中…" : previewFailed ? "预览图暂时无法加载" : "暂无预览图，可按需查看原件")}</p>{previewFailed && enabled && <button className="btn" onClick={() => { setPreviewFailed(false); setPreviewAttempt(value => value + 1); }}>重试预览图</button>}</div>}
       {enabled && source && (video ? <video ref={videoElement} className={`media-visual${visible ? "" : " original-pending"}`} key={source} src={source} muted={muted} playsInline preload="auto" poster={preview || undefined} onLoadedData={ready} onDurationChange={event=>setDuration(Number.isFinite(event.currentTarget.duration)?event.currentTarget.duration:0)} onTimeUpdate={event=>setPosition(event.currentTarget.currentTime)} onRateChange={event=>setRate(event.currentTarget.playbackRate)} onVolumeChange={event=>setMuted(event.currentTarget.muted||event.currentTarget.volume===0)} onError={() => void failed()} onEnded={() => { if (partIndex + 1 < parts.length) choosePart(partIndex + 1, true); }} /> : <img className={`media-visual${visible ? "" : " original-pending"}`} src={source} alt={file.name} onLoad={ready} onError={() => void failed()} />)}
+      {isAudio && visible && <div className={`media-spectrum${interactions.playing ? "" : " is-paused"}`} data-label={file.name}>{[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14].map(i => <span key={i} />)}</div>}
       {interactions.overlay}
       {video&&<div className="media-progress-edge" style={{"--media-progress":`${totalDuration>0?Math.min(100,position/totalDuration*100):0}%`} as CSSProperties}>
         <input type="range" aria-label="视频进度" aria-valuetext={`${mediaTime(position)} / ${mediaTime(totalDuration)}`} min="0" max={totalDuration||1} step="0.1" value={Math.min(position,totalDuration||1)} disabled={!videoReady||!totalDuration||!interactionActive} onChange={event=>interactions.seek(0,Number(event.target.value))} onPointerUp={event=>event.currentTarget.blur()} />

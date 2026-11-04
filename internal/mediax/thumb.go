@@ -55,7 +55,15 @@ var videoMimes = map[string]string{
 	"vob": "video/mpeg", "ogv": "video/ogg", "ogm": "video/ogg", "rm": "video/vnd.rn-realvideo",
 }
 
+// audioMimes 音频扩展；统一归为 video 播放。
+var audioMimes = map[string]string{
+	"mp3": "audio/mpeg", "flac": "audio/flac", "wav": "audio/wav", "m4a": "audio/mp4",
+	"aac": "audio/aac", "ogg": "audio/ogg", "opus": "audio/opus", "wma": "audio/x-ms-wma",
+	"aiff": "audio/aiff", "mka": "audio/x-matroska",
+}
+
 // Detect 依据扩展名 + 内容嗅探识别媒体。
+// 音频归为 video：复用整条视频流水线（查看/流式播放），前端按扩展名显示波形动画。
 func Detect(ext string, sniffed string) Info {
 	ext = strings.ToLower(strings.TrimPrefix(ext, "."))
 	if m, ok := imageMimes[ext]; ok {
@@ -64,13 +72,25 @@ func Detect(ext string, sniffed string) Info {
 	if m, ok := videoMimes[ext]; ok {
 		return Info{Kind: "video", Mime: m}
 	}
+	if m, ok := audioMimes[ext]; ok {
+		return Info{Kind: "video", Mime: m}
+	}
 	switch {
 	case strings.HasPrefix(sniffed, "image/"):
 		return Info{Kind: "image", Mime: strings.SplitN(sniffed, ";", 2)[0]}
 	case strings.HasPrefix(sniffed, "video/"):
 		return Info{Kind: "video", Mime: strings.SplitN(sniffed, ";", 2)[0]}
+	case strings.HasPrefix(sniffed, "audio/"):
+		return Info{Kind: "video", Mime: strings.SplitN(sniffed, ";", 2)[0]}
 	}
 	return Info{Kind: "other", Mime: "application/octet-stream"}
+}
+
+// AudioExt reports whether an extension denotes an audio file the browser
+// cannot necessarily play directly, so pimg transcodes it to AAC-in-MP4.
+func AudioExt(ext string) bool {
+	_, ok := audioMimes[strings.ToLower(strings.TrimPrefix(ext, "."))]
+	return ok
 }
 
 // HasFFmpeg 探测 ffmpeg 是否可用（结果缓存）。

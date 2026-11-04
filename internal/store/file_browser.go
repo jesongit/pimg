@@ -243,7 +243,13 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 				defer func() { <-cache.streamSlots }()
 				// Linux subprocesses inherit the validated read-only descriptor,
 				// so a multi-GB source converts without a full copy first.
-				convErr := mediax.MakeCompatibleFileFragments(convCtx, source, job.temp, mode, caps)
+				var convErr error
+				switch {
+				case mediax.AudioExt(entry.Ext):
+					convErr = mediax.MakeCompatibleAudio(convCtx, source, job.temp)
+				default:
+					convErr = mediax.MakeCompatibleFileFragments(convCtx, source, job.temp, mode, caps)
+				}
 				if convErr != nil {
 					os.Remove(job.temp)
 				}
@@ -390,6 +396,10 @@ func (s *Service) BrowserPlaybackMode(ctx context.Context, p, version string, ca
 	defer source.Close()
 	if entry.Kind != "video" {
 		return "", 0, false, nil
+	}
+	// Audio carries no video stream to probe; it streams as a companion MP4.
+	if mediax.AudioExt(entry.Ext) {
+		return "remux", 0, false, nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

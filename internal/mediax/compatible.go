@@ -128,6 +128,47 @@ func MakeCompatibleFileFragments(ctx context.Context, source *os.File, dest, mod
 	return lastErr
 }
 
+// MakeCompatibleAudio converts an audio file into a playable MP4 that carries
+// a single still black frame plus the audio (transcoded to AAC). Browsers can
+// then play it through a <video> element, letting the UI show a waveform
+// overlay. Fragmented output keeps it streamable while converting.
+func MakeCompatibleAudio(ctx context.Context, source *os.File, dest string) error {
+	sourcePath := source.Name()
+	var snapshot string
+	if runtime.GOOS == "linux" {
+		sourcePath = "/proc/self/fd/3"
+	} else {
+		snap, err := os.CreateTemp(filepath.Dir(dest), "aud-src-*.part")
+		if err != nil {
+			return err
+		}
+		if _, err = io.Copy(snap, source); err != nil {
+			snap.Close()
+			return err
+		}
+		if err = snap.Close(); err != nil {
+			return err
+		}
+		snapshot = snap.Name()
+		defer os.Remove(snapshot)
+		sourcePath = snapshot
+	}
+	args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error",
+		"-i", sourcePath,
+		"-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=1",
+		"-map", "1:v:0", "-map", "0:a:0?",
+		"-c:v", "libx264", "-preset", "ultrafast", "-t", "1", "-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-b:a", "192k",
+		"-f", "mp4", "-movflags", "+empty_moov+frag_keyframe+default_base_moof", dest}
+	return runConversionWithStallWatchdog(ctx, dest, func(ctx context.Context) error {
+		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+		if runtime.GOOS == "linux" {
+			cmd.ExtraFiles = []*os.File{source}
+		}
+		return runVideoProcess(cmd)
+	})
+}
+
 func makeCompatible(ctx context.Context, source string, file *os.File, dest, kind, mode string, caps BrowserCaps, progress func(float64)) error {
 	command := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, name, args...)

@@ -67,6 +67,7 @@ type Service struct {
 	localImportMu  sync.Mutex
 	browser        browserCache
 	browserIndex   browserIndexManager
+	extract        *extractCenter
 }
 
 func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client, r2c *r2x.Client, log *slog.Logger, options ...ServiceOption) (*Service, error) {
@@ -76,6 +77,7 @@ func New(cfg *config.Config, db *dbx.DB, master *cryptox.Master, tg *tgx.Client,
 		ctDir:    cfg.Paths.TempDir,
 		previews: newPreviewCache(32<<20, 5*time.Minute),
 		media:    newMediaCache(),
+		extract:  newExtractCenter(),
 	}
 	if cfg.Paths.LegacyDir != "" {
 		s.upDir = filepath.Join(cfg.Paths.DataDir, "work", "uploads")

@@ -102,6 +102,11 @@ func (s *Service) absoluteImportPath(p string) (string, error) {
 	return filepath.Join(s.ImportRoot(), filepath.FromSlash(p)), nil
 }
 
+// AbsoluteBrowserPath resolves a browser path to a validated absolute path.
+func (s *Service) AbsoluteBrowserPath(p string) (string, error) {
+	return s.absoluteImportPath(p)
+}
+
 // Check ancestors as well as entries below the selected source; choosing a
 // different absolute path must not make symlinks an implicit import feature.
 func openImportRoot(p string) (*os.Root, error) {

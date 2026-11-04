@@ -19,6 +19,7 @@ func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/file-browser", s.auth(s.handleFileBrowser))
 	mux.HandleFunc("POST /api/admin/file-browser/view", s.auth(s.handleBrowserView))
 	mux.HandleFunc("GET /api/admin/file-browser/content", s.auth(s.handleBrowserContent))
+	mux.HandleFunc("POST /api/admin/file-browser/extract", s.auth(s.handleBrowserExtract))
 	mux.HandleFunc("GET /api/admin/file-browser/index", s.auth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		writeJSON(w, 200, s.Svc.BrowserIndexStatus())
@@ -30,6 +31,28 @@ func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 		}
 		writeJSON(w, 202, map[string]bool{"queued": true})
 	}))
+}
+
+func (s *Server) handleBrowserExtract(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := readJSONBody(r, &req, 8<<10); err != nil {
+		fail(w, 400, "解压参数无效")
+		return
+	}
+	abs, err := s.Svc.AbsoluteBrowserPath(req.Path)
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	job, err := s.Svc.StartExtract(abs)
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 202, job)
 }
 
 func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {
