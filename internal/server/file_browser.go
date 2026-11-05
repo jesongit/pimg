@@ -34,6 +34,15 @@ func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 		}
 		writeJSON(w, 202, map[string]bool{"queued": true})
 	}))
+	// Bookmark bar: a per-admin tree of saved source folders. Deleting a
+	// bookmark or folder only removes the entry, never the source directory.
+	mux.HandleFunc("GET /api/admin/file-browser/bookmarks", s.auth(s.handleListFileBookmarks))
+	mux.HandleFunc("POST /api/admin/file-browser/bookmarks/folders", s.auth(s.handleCreateFileBookmarkFolder))
+	mux.HandleFunc("PATCH /api/admin/file-browser/bookmarks/folders/{id}", s.auth(s.handleRenameFileBookmarkFolder))
+	mux.HandleFunc("DELETE /api/admin/file-browser/bookmarks/folders/{id}", s.auth(s.handleDeleteFileBookmarkFolder))
+	mux.HandleFunc("POST /api/admin/file-browser/bookmarks/items", s.auth(s.handleCreateFileBookmark))
+	mux.HandleFunc("DELETE /api/admin/file-browser/bookmarks/items/{id}", s.auth(s.handleDeleteFileBookmark))
+	mux.HandleFunc("PATCH /api/admin/file-browser/bookmarks/move/{id}", s.auth(s.handleMoveFileBookmark))
 }
 
 func (s *Server) handleBrowserExtract(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +158,14 @@ func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "展开参数无效")
 		return
 	}
-	listing, err := s.Svc.BrowseLocalFiles(r.Context(), r.URL.Query().Get("path"), r.URL.Query().Get("q"), offset, r.URL.Query().Get("sort"), store.BrowserOptions{Recursive: recursive == "1", Snapshot: r.URL.Query().Get("snapshot")})
+	kind := r.URL.Query().Get("filter")
+	switch kind {
+	case "", "all", "image", "video", "folder", "other":
+	default:
+		fail(w, 400, "筛选参数无效")
+		return
+	}
+	listing, err := s.Svc.BrowseLocalFiles(r.Context(), r.URL.Query().Get("path"), r.URL.Query().Get("q"), offset, r.URL.Query().Get("sort"), store.BrowserOptions{Recursive: recursive == "1", Snapshot: r.URL.Query().Get("snapshot"), Kind: kind})
 	if err != nil {
 		if r.Context().Err() != nil {
 			return

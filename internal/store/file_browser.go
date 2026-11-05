@@ -219,6 +219,7 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 	if job == nil {
 		dest := s.browserCompatiblePathFor(entry, mode, fp)
 		convCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+		defer cancel()
 		temp := dest + ".building"
 		// Create the building file up front: the player's pump attaches to it
 		// immediately and waits as long as the conversion needs, even when the
@@ -252,11 +253,12 @@ func (s *Service) StreamBrowserCompatible(ctx context.Context, p, version, mode 
 				}
 				if convErr != nil {
 					os.Remove(job.temp)
+					if s.Log != nil {
+						s.Log.Warn("流式兼容转换异常", "mode", mode, "file", entry.Name, "err", convErr.Error(), "canceled", convCtx.Err() != nil)
+					}
+					return convErr
 				}
-				if convErr != nil && convCtx.Err() == nil && s.Log != nil {
-					s.Log.Warn("流式兼容转换失败", "mode", mode, "file", entry.Name, "err", convErr.Error())
-				}
-				return convErr
+				return nil
 			}()
 			job.mu.Lock()
 			job.err = conversionErr

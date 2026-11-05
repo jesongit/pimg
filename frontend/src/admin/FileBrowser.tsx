@@ -2,17 +2,18 @@ import FloatingFeedback from "../FloatingFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
-import { IconArrowDown, IconArrowUp, IconChevronDown, IconChevronRight, IconDots, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconDownload, IconFolderPlus, IconLink, IconStar, IconStarFilled, IconUpload, IconX } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowUp, IconChevronRight, IconDots, IconFile, IconFolder, IconFolders, IconPhoto, IconPlayerPlay, IconRefresh, IconSearch, IconDownload, IconFolderPlus, IconLink, IconUpload, IconX } from "@tabler/icons-react";
 import { api, fmtSize } from "../api";
 import type { BrowserIndexStatus } from "../api";
 import { useGallery } from "./GalleryScope";
 import { useToast } from "../App";
-import SelectAllControl from "./SelectAllControl";
 import LocalImport from "./LocalImport";
+import FilterSelect from "./FilterSelect";
 import BrowserViewer from "./BrowserViewer";
 import MediaFullscreenSession from "../media/MediaFullscreenSession";
 import useDragSelection from "./useDragSelection";
-import { useFileBookmarks } from "./FileBookmarks";
+import { BookmarkRowButton, MultiBookmarkButton, FileBookmarksBar, useFileBookmarks } from "./FileBookmarks";
+import type { BookmarkNode } from "./FileBookmarks";
 import { browserBase, browserPathLabel } from "./browserMedia";
 import type { BrowserEntry, BrowserListing } from "./browserMedia";
 import "./file-browser.css";
@@ -26,14 +27,16 @@ const columns = [
   { label: "修改时间", asc: "modified_asc", desc: "modified_desc", className: "browser-modified-column" },
 ];
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+const filterOptions = [{ value: "", label: "全部" }, { value: "folder", label: "文件夹" }, { value: "image", label: "图片" }, { value: "video", label: "视频" }, { value: "other", label: "其他文件" }];
 function fileTime(value: number) { return value ? dateFormat.format(new Date(value * 1000)) : "—"; }
 function isRootPath(value: string) { return /^(?:\/+|[a-z]:[\\/]*|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*)$/i.test(value); }
+function parentPath(value: string) { const cut = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\")); return cut > 0 ? value.slice(0, cut) : value; }
 
 export default function FileBrowser() {
   const { actor } = useGallery(), toast = useToast();
   const storageKey = `pimg:file-locations:${actor.owner_id}`;
   const [params, setParams] = useSearchParams();
-  const [initialPath] = useState(() => { try { return sessionStorage.getItem(storageKey + ":last") || "/data"; } catch { return "/data"; } });
+  const [initialPath] = useState(() => { try { return sessionStorage.getItem(storageKey + ":last") || (import.meta.env.DEV ? "" : "/data"); } catch { return import.meta.env.DEV ? "" : "/data"; } });
   const path = params.get("path") ?? initialPath, query = params.get("q") || "";
   const previousPath = useRef(path), pathChanged = previousPath.current !== path;
   const recursive = params.get("recursive") === "1" && !pathChanged && !isRootPath(path);
@@ -44,52 +47,13 @@ export default function FileBrowser() {
     }
   }, [path, pathChanged, params, setParams]);
   const requestedSort = params.get("sort") || "name", sort = columns.some(column => requestedSort === column.asc || requestedSort === column.desc) ? requestedSort : "name";
+  const requestedFilter = params.get("filter") || "", filter = ["image", "video", "folder", "other"].includes(requestedFilter) ? requestedFilter : "";
   const [search, setSearch] = useState(query);
   const [data, setData] = useState<BrowserListing | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
-  const bookmarks = useFileBookmarks(storageKey, data ? data.breadcrumbs[data.breadcrumbs.length - 1] || { path: data.path, name: data.path } : null);
-  const [visibleBookmarks, setVisibleBookmarks] = useState(bookmarks.locations);
-  const [overflowBookmarks, setOverflowBookmarks] = useState<typeof bookmarks.locations>([]);
-  const [moreOpen, setMoreOpen] = useState(false), [morePos, setMorePos] = useState({ top: 0, left: 0 });
-  const bookmarksBarRef = useRef<HTMLDivElement>(null), bookmarksMoreRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    setMoreOpen(false);
-    setVisibleBookmarks(bookmarks.locations);
-    setOverflowBookmarks([]);
-  }, [bookmarks.locations]);
-  useEffect(() => {
-    // 把放不进第一行的收藏项收进「更多」弹层。签名比较避免重排震荡。
-    const bar = bookmarksBarRef.current;
-    if (!bar) return;
-    let raf = 0;
-    const measure = () => {
-      raf = 0;
-      const nodes = bar.querySelectorAll<HTMLElement>(".file-bookmarks-bar-item");
-      const shown = nodes.length && nodes[0].offsetTop <= 4
-        ? Array.from(nodes).filter(node => node.offsetTop <= 4).map(node => node.dataset.path!)
-        : [];
-      const overflow = bookmarks.locations.filter(l => !shown.includes(l.path));
-      setVisibleBookmarks(previous => {
-        const same = previous.length === shown.length && shown.every(p => previous.some(l => l.path === p));
-        return same ? previous : bookmarks.locations.filter(l => shown.includes(l.path));
-      });
-      setOverflowBookmarks(previous => {
-        const same = previous.length === overflow.length && overflow.every(l => previous.some(o => o.path === l.path));
-        return same ? previous : overflow;
-      });
-    };
-    const schedule = () => { if (!raf) raf = requestAnimationFrame(measure); };
-    schedule();
-    const observer = new ResizeObserver(schedule);
-    observer.observe(bar);
-    return () => { observer.disconnect(); if (raf) cancelAnimationFrame(raf); };
-  }, [bookmarks.locations]);
-  useEffect(() => {
-    if (!moreOpen) return;
-    const close = (event: MouseEvent) => { if (!bookmarksMoreRef.current?.contains(event.target as Node) && !(event.target as HTMLElement).closest(".file-bookmarks-more-list")) setMoreOpen(false); };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [moreOpen]);
+  const currentFolder = data ? data.breadcrumbs[data.breadcrumbs.length - 1] || { path: data.path, name: data.path } : null;
+  const bookmarks = useFileBookmarks(actor.owner_id);
   const [revision, setRevision] = useState(0), [more, setMore] = useState(false);
+  const [pendingFile, setPendingFile] = useState<string | null>(null);
   const [indexChanged, setIndexChanged] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set()), [detail, setDetail] = useState<string | null>(null);
   const [importing, setImporting] = useState<{ paths: string[]; directory: boolean } | null>(null);
@@ -101,24 +65,37 @@ export default function FileBrowser() {
     reveal(); const observer = new ResizeObserver(reveal); observer.observe(nav);
     return () => observer.disconnect();
   }, [data?.path]);
-  const visit = useCallback((next: string) => { setSearch(""); setParams({ path: next, ...(sort !== "name" ? { sort } : {}) }); }, [setParams, sort]);
-  const changeSort = (value: string) => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(value !== "name" ? { sort: value } : {}), ...(recursive ? { recursive: "1" } : {}) });
+  const visit = useCallback((next: string) => { setSearch(""); setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(filter ? { filter } : {}) }); }, [setParams, sort, filter]);
+  const openBookmark = useCallback((node: BookmarkNode) => {
+    if (!node.path) return;
+    if (node.directory === false) { setPendingFile(node.path); visit(parentPath(node.path)); }
+    else visit(node.path);
+  }, [visit]);
+  const changeSort = (value: string) => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(value !== "name" ? { sort: value } : {}), ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) });
+  const changeFilter = (value: string) => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(value ? { filter: value } : {}), ...(recursive ? { recursive: "1" } : {}) });
   const toggleExpanded = () => {
     const currentPath = data?.path || path;
     previousPath.current = currentPath;
-    setParams({ path: currentPath, ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(!recursive ? { recursive: "1" } : {}) });
+    setParams({ path: currentPath, ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(filter ? { filter } : {}), ...(!recursive ? { recursive: "1" } : {}) });
   };
   useEffect(() => {
     const controller = new AbortController(), request = ++sequence.current;
     setLoading(true); setError(""); setData(null); setSelected(new Set()); setDetail(null); anchor.current = null; setMore(false); setIndexChanged(false);
-    void api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path, q: query, sort, ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal).then(value => {
+    void api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path, q: query, sort, ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal).then(value => {
       if (request !== sequence.current || controller.signal.aborted) return;
       setData(value);
       try { sessionStorage.setItem(storageKey + ":last", value.path); } catch { /* Storage may be unavailable. */ }
     }).catch(cause => { if (!controller.signal.aborted && request === sequence.current) setError(cause.message); })
       .finally(() => { if (!controller.signal.aborted && request === sequence.current) setLoading(false); });
     return () => controller.abort();
-  }, [path, query, sort, recursive, revision, storageKey]);
+  }, [path, query, sort, filter, recursive, revision, storageKey]);
+  useEffect(() => {
+    if (!pendingFile || loading) return;
+    const target = data?.items.find(entry => entry.path === pendingFile);
+    if (target && (target.kind === "image" || target.kind === "video")) setDetail(pendingFile);
+    else if (data) toast("收藏的文件不存在或无法预览", "err");
+    setPendingFile(null);
+  }, [pendingFile, loading, data]);
   useEffect(() => {
     if (!data?.indexed || loading) return;
     const controller = new AbortController(), request = sequence.current;
@@ -139,30 +116,31 @@ export default function FileBrowser() {
           if (stateChanged) setData(previous => previous && { ...previous, index_building: !root.ready, index_updating: root.updating, index_error: root.error || status.error });
           return;
         }
-        const value = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal);
+        const value = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal);
         if (!controller.signal.aborted && sequence.current === request) { setData(value); setIndexChanged(false); }
       } catch { /* A transient status failure must not hide a usable listing. */ }
       finally { busy = false; }
     }, 3000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [data, loading, selected.size, detail, importing, more, query, sort, recursive]);
+  }, [data, loading, selected.size, detail, importing, more, query, sort, filter, recursive]);
   useEffect(() => { setSearch(query); }, [query]);
   useEffect(() => {
     if (search === query) return;
-    const timer = setTimeout(() => setParams({ ...(path ? { path } : {}), ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(recursive ? { recursive: "1" } : {}) }, { replace: true }), 300);
+    const timer = setTimeout(() => setParams({ ...(path ? { path } : {}), ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) }, { replace: true }), 300);
     return () => clearTimeout(timer);
-  }, [search, query, path, sort, recursive, setParams]);
+  }, [search, query, path, sort, filter, recursive, setParams]);
   const loadMore = async () => {
     if (!data?.next_offset || more) return;
     const request = sequence.current;
     setMore(true);
     try {
-      const result = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, offset: String(data.next_offset), ...(data.snapshot ? { snapshot: data.snapshot } : {}), ...(recursive ? { recursive: "1" } : {}) })}`);
+      const result = await api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path: data.path, q: query, sort, offset: String(data.next_offset), ...(data.snapshot ? { snapshot: data.snapshot } : {}), ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) })}`);
       if (request === sequence.current) { setData(previous => previous && { ...result, items: [...previous.items, ...result.items.filter(item => !previous.items.some(old => old.path === item.path))] }); return result; }
     } catch (cause: any) { if (request === sequence.current) toast(cause.message, "err"); }
     finally { if (request === sequence.current) setMore(false); }
   };
   const items = data?.items || [], files = items.filter(entry => !entry.directory);
+  const bookmarkTargets = items.filter(entry => selected.has(entry.path)).map(entry => ({ path: entry.path, name: entry.name, directory: entry.directory }));
   const allItemsSelected = items.length > 0 && items.every(entry => selected.has(entry.path));
   const refresh = async () => {
     if (data?.indexed) {
@@ -262,7 +240,6 @@ export default function FileBrowser() {
       <div className="file-browser-navigation">
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-up" aria-label="上一级" title="上一级" disabled={!data || data.parent === data.path || loading} onClick={() => data && visit(data.parent)}><IconArrowUp size={17} /></button>
         <nav ref={breadcrumbs} className="file-browser-breadcrumbs" aria-label="文件夹路径">{folderNav.map((item, index) => <span key={item.path}>{index > 0 && <IconChevronRight size={13} />}<button type="button" className="text-button" title={item.path} aria-current={index === folderNav.length - 1 ? "location" : undefined} onClick={() => visit(item.path)}>{item.name}</button></span>)}</nav>
-        <button type="button" className="btn btn-ghost file-browser-icon" aria-label={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} title={bookmarks.saved ? "取消收藏当前目录" : "收藏当前目录"} aria-pressed={bookmarks.saved} disabled={!data || loading} onClick={bookmarks.toggle}>{bookmarks.saved ? <IconStarFilled size={17} /> : <IconStar size={17} />}</button>
         <button type="button" className="btn btn-ghost file-browser-icon file-browser-expand" aria-label={recursive ? "收起所有文件" : "展开所有文件"} title={data && data.parent === data.path || isRootPath(path) ? "根目录不支持展开，请先进入子文件夹" : recursive ? "收起所有文件，返回逐层浏览" : "展开当前目录及子目录中的所有图片和视频"} aria-pressed={recursive} disabled={loading || !data && !recursive || !!data && data.parent === data.path || isRootPath(path)} onClick={toggleExpanded}><IconFolders size={17} /></button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label="刷新目录" title="刷新目录" disabled={loading} onClick={() => void refresh()}><IconRefresh size={17} /></button>
         <button type="button" className="btn btn-ghost file-browser-icon" aria-label="导入当前目录" title="导入当前目录（可包含子目录）" disabled={!data || loading || !!query} onClick={() => data && importPaths([data.path], true)}><IconUpload size={17} /></button>
@@ -275,29 +252,21 @@ export default function FileBrowser() {
         </div>
       </div>
       <div className="file-browser-actions">
-        <SelectAllControl checked={allSelected} indeterminate={selected.size > 0 && !allSelected} disabled={!selectable.length || loading} scope="全选已加载的可导入文件" onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(entry => entry.path)))} />
         <label className="file-browser-search"><IconSearch size={16} /><input className="input" aria-label={recursive ? "搜索所有图片和视频" : "搜索当前目录"} placeholder={recursive ? "搜索所有图片和视频" : "搜索当前目录"} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="btn btn-ghost" aria-label="清除文件搜索" onClick={() => setSearch("")}><IconX size={15} /></button>}</label>
-        <span className="file-browser-count" role="status">{data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : ""}</span>
+        <FilterSelect label="筛选" value={filter} options={filterOptions} onChange={changeFilter} active={!!filter} title="筛选文件类型" width={150} />
+        <span className="file-browser-count" role="status">{[data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : "", filter ? `（${filterOptions.find(option => option.value === filter)?.label}）` : ""].join("")}</span>
       </div>
     </div>
-    <div className="file-browser-bookmarks-bar" role="toolbar" aria-label="收藏栏" ref={bookmarksBarRef}>
-      {bookmarks.locations.length ? <>
-        {visibleBookmarks.map(item => <div key={item.path} className="file-bookmarks-bar-item" data-path={item.path}><button type="button" className="text-button" title={browserPathLabel(item.path)} onClick={() => visit(item.path)}>{item.name || browserPathLabel(item.path)}</button></div>)}
-        {overflowBookmarks.length > 0 && <button type="button" ref={bookmarksMoreRef} className="btn btn-ghost file-browser-icon file-bookmarks-more" aria-label="更多收藏" aria-haspopup="menu" aria-expanded={moreOpen} title="更多收藏" onClick={event => { const r = (event.currentTarget as HTMLElement).getBoundingClientRect(); setMorePos({ top: r.bottom + 6, left: r.right - 220 }); setMoreOpen(v => !v); }}><IconChevronDown size={15} /></button>}
-        {moreOpen && overflowBookmarks.length > 0 && createPortal(<div className="file-bookmarks-more-list" style={{ position: "fixed", top: morePos.top, left: morePos.left, zIndex: 999999 }}>
-          {overflowBookmarks.map(item => <button type="button" key={item.path} title={browserPathLabel(item.path)} onClick={() => { setMoreOpen(false); visit(item.path); }}>{item.name || browserPathLabel(item.path)}</button>)}
-        </div>, document.body)}
-      </> : <span className="file-bookmarks-empty-hint">尚未收藏目录；点星标收藏后显示在这里</span>}
-    </div>
+    <FileBookmarksBar tree={bookmarks.tree} currentPath={currentFolder?.path} onOpen={openBookmark} onRemoveItem={bookmarks.removeItem} onRemoveFolder={bookmarks.removeFolder} onCreateFolder={bookmarks.createFolder} onMove={bookmarks.move} />
     <div className="file-browser-content" aria-busy={loading}>
       {data?.indexed && <FloatingFeedback className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</FloatingFeedback>}
       {!!data?.scan_limited && <FloatingFeedback className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</FloatingFeedback>}
-      {error ? <FloatingFeedback className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button></FloatingFeedback> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.index_building ? "索引正在建立，文件会陆续显示…" : data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
+      {error ? <FloatingFeedback className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button>{bookmarks.hasPath(path) && <button type="button" className="btn btn-danger" onClick={() => void bookmarks.removePath(path)}>从收藏栏移除</button>}</FloatingFeedback> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.index_building ? "索引正在建立，文件会陆续显示…" : data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : filter ? "当前目录没有符合筛选条件的项目" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
         {!!data?.skipped_directories && <FloatingFeedback className="file-browser-warning" role="status">有 {data.skipped_directories} 个子文件夹无法读取，已展示其余可读取的文件。</FloatingFeedback>}
         <div ref={root} className={`file-browser-list${drag.active ? " is-drag-selecting" : ""}`} {...drag.bind}>
           <table className="browser-table" aria-label={recursive ? "所有图片和视频" : "文件列表"}>
-            <colgroup><col className="browser-check-column" />{columns.map(column => <col key={column.asc} className={column.className} />)}</colgroup>
-            <thead><tr><th scope="col" className="browser-check-column">{items.length > 0 && <button type="button" role="checkbox" aria-checked={allItemsSelected ? "true" : selected.size > 0 ? "mixed" : "false"} aria-label="全选当前列表（含文件夹）" className="browser-row-check browser-select-all" onClick={() => setSelected(allItemsSelected ? new Set() : new Set(items.map(item => item.path)))}><span className="check" data-on={allItemsSelected} data-indeterminate={!allItemsSelected && selected.size > 0}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}</tr></thead>
+            <colgroup><col className="browser-check-column" />{columns.map(column => <col key={column.asc} className={column.className} />)}<col className="browser-mark-column" /></colgroup>
+            <thead><tr><th scope="col" className="browser-check-column">{items.length > 0 && <button type="button" role="checkbox" aria-checked={allItemsSelected ? "true" : selected.size > 0 ? "mixed" : "false"} aria-label="全选当前列表（含文件夹）" className="browser-row-check browser-select-all" onClick={() => setSelected(allItemsSelected ? new Set() : new Set(items.map(item => item.path)))}><span className="check" data-on={allItemsSelected} data-indeterminate={!allItemsSelected && selected.size > 0}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button>}</th>{columns.map(column => <th scope="col" key={column.asc} className={column.className} aria-sort={sort === column.asc ? "ascending" : sort === column.desc ? "descending" : "none"}><button type="button" title={`按${column.label}排序`} onClick={() => changeSort(sort === column.asc ? column.desc : column.asc)}>{column.label}{sort === column.asc ? <IconArrowUp size={13} /> : sort === column.desc ? <IconArrowDown size={13} /> : null}</button></th>)}<th scope="col" className="browser-mark-column"><span className="sr-only">收藏</span></th></tr></thead>
             <tbody>{items.map(entry => <tr key={entry.path + entry.version} data-file-id={entry.path} data-selection-disabled={!entry.importable ? "true" : undefined} className={`browser-row${selected.has(entry.path) ? " selected" : ""}`} onClick={event => { if (!(event.target as HTMLElement).closest("button,a,input")) openEntry(entry, event.shiftKey); }}>
               <td className="browser-select-cell"><button type="button" className="browser-row-check" role="checkbox" aria-checked={selected.has(entry.path)} aria-label={`选择 ${entry.directory ? "文件夹" : "文件"} ${entry.name}`} onClick={event => toggle(entry, event.shiftKey)}><span className="check" data-on={selected.has(entry.path)}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m3 8 3 3 5-6" /></svg></span></button></td>
               <td className="browser-name-cell"><div className="browser-name-row-wrap"><button type="button" className="browser-row-open" data-selection-open disabled={!entry.directory && entry.kind === "other" && !isArchive(entry)} aria-label={`${entry.directory ? "打开文件夹" : "查看文件"} ${entry.name}`} title={browserPathLabel(entry.path)} onClick={event => openEntry(entry, event.shiftKey)}>{entry.directory ? <IconFolder size={21} /> : entry.kind === "image" ? <IconPhoto size={21} /> : entry.kind === "video" && !isArchive(entry) ? <IconPlayerPlay size={21} /> : <IconFile size={21} />}<span className="browser-row-name"><span>{entry.name}</span>{recursive && entry.relative_path.includes("/") && <small title={entry.relative_path}>{entry.relative_path.slice(0, entry.relative_path.lastIndexOf("/"))}</small>}</span>{entry.directory && <IconChevronRight size={14} className="browser-folder-chevron" />}</button>{isArchive(entry) ? <button type="button" className="browser-extract-btn" aria-label={`解压 ${entry.name}`} title={extracting[entry.path] !== undefined ? `解压 ${entry.name} 中 ${extracting[entry.path] >= 0 ? extracting[entry.path] + "%" : "…"}` : "解压到当前目录旁"} disabled={extracting[entry.path] !== undefined} onClick={event => { event.stopPropagation(); void extractArchive(entry); }}>{extracting[entry.path] !== undefined ? <span className="browser-extract-label">{extracting[entry.path] >= 0 ? `${extracting[entry.path]}%` : "解压中"}</span> : <IconDownload size={16} />}</button> : null}</div></td>
@@ -305,13 +274,14 @@ export default function FileBrowser() {
               <td className="browser-size-cell">{entry.directory ? "—" : fmtSize(entry.size)}</td>
               <td className="browser-created-cell" data-label="创建" title={entry.created_at ? new Date(entry.created_at * 1000).toLocaleString() : "文件系统未提供创建时间"}>{fileTime(entry.created_at)}</td>
               <td className="browser-modified-cell" data-label="修改" title={new Date(entry.modified_at * 1000).toLocaleString()}>{fileTime(entry.modified_at)}</td>
+              <td className="browser-mark-cell"><BookmarkRowButton target={{ path: entry.path, name: entry.name, directory: entry.directory }} tree={bookmarks.tree} saved={bookmarks.hasPath(entry.path)} onAdd={bookmarks.add} onRemovePath={bookmarks.removePath} /></td>
             </tr>)}</tbody>
           </table>
         </div>
         {!!data?.next_offset && <div className="file-browser-more"><button type="button" className="btn" disabled={more} onClick={() => void loadMore()}>{more ? "正在读取…" : `加载更多（已显示 ${items.length} / ${data.total}）`}</button></div>}
       </>}
     </div>
-    {selected.size > 0 && <div className="batch-bar file-browser-batch" aria-label="文件导入操作"><span role="status">已选 {selected.size} 个文件</span><button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>取消选择</button><button type="button" className="btn btn-crayon" onClick={() => importPaths([...selected])}>导入到相册</button></div>}
+    {selected.size > 0 && <div className="batch-bar file-browser-batch" aria-label="文件导入操作"><span role="status">已选 {selected.size} 项</span><button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>取消选择</button><MultiBookmarkButton targets={bookmarkTargets} tree={bookmarks.tree} onAdd={bookmarks.add} /><button type="button" className="btn btn-crayon" onClick={() => importPaths([...selected])}>导入到相册</button></div>}
     {current && <MediaFullscreenSession><BrowserViewer key={current.path + current.version} entry={current} position={`${active + 1} / ${media.length}${data?.next_offset ? "+" : ""}`} selected={selected.has(current.path)} onSelect={() => toggle(current)} onPrev={active > 0 ? () => setDetail(media[active - 1].path) : undefined} onNext={active + 1 < media.length ? () => setDetail(media[active + 1].path) : data?.next_offset ? () => { void loadMore().then(result => { const next = result?.items.find(entry => entry.kind === "image" || entry.kind === "video"); if (next) setDetail(next.path); }); } : undefined} onClose={() => setDetail(null)} onImport={() => importPaths([current.path])} /></MediaFullscreenSession>}
     {importing && <LocalImport albums={[]} paths={importing.paths} directoryImport={importing.directory} onClose={() => setImporting(null)} />}
     {mkdirOpen ? <><div className="overlay" onClick={() => !mkdirBusy && setMkdirOpen(false)} /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="mkdir-title" onClick={event => event.stopPropagation()}>

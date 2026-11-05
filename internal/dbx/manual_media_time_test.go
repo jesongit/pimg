@@ -166,7 +166,7 @@ func TestManualDateMigrationFrom27PreservesRowsAndRebuildsOnlyDateIndexes(t *tes
 	}
 	legacyFileQuery := `SELECT ` + legacyColumns + ` FROM files ORDER BY id`
 	legacyRows := querySnapshot(t, &DB{reader: old}, legacyFileQuery)
-	const unrelatedSchema = `SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT IN ('files_media_time','files_owner_media_time','albums','albums_displayed','files','gallery_file_visibility_update','gallery_album_visibility_update') ORDER BY type,name`
+	const unrelatedSchema = `SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT IN ('files_media_time','files_owner_media_time','albums','albums_displayed','files','gallery_file_visibility_update','gallery_album_visibility_update','file_bookmarks','idx_file_bookmarks_owner_parent') ORDER BY type,name`
 	legacySchema := querySnapshot(t, &DB{reader: old}, unrelatedSchema)
 	old.Close()
 	d, err := Open(path)
@@ -198,7 +198,7 @@ func TestManualDateMigrationFrom27PreservesRowsAndRebuildsOnlyDateIndexes(t *tes
 		t.Fatal("restart changed file")
 	}
 	// The previous schema must truly be the released schema, not a moving offset.
-	if CurrentSchemaVersion() != 30 {
+	if CurrentSchemaVersion() != 31 {
 		t.Fatal("review this upgrade fixture for a new schema", CurrentSchemaVersion())
 	}
 }

@@ -21,6 +21,22 @@ import (
 type BrowserOptions struct {
 	Recursive bool
 	Snapshot  string
+	Kind      string // "", "image", "video", "folder" or "other"
+}
+
+func browserKindMatches(entry BrowserEntry, kind string) bool {
+	switch kind {
+	case "", "all":
+		return true
+	case "folder":
+		return entry.Directory
+	case "image", "video":
+		return !entry.Directory && entry.Kind == kind
+	case "other":
+		return !entry.Directory && entry.Kind != "image" && entry.Kind != "video"
+	default:
+		return true
+	}
 }
 
 type browserSnapshot struct {
@@ -245,7 +261,7 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 	if opts.Recursive && runtime.GOOS == "windows" {
 		query = strings.ReplaceAll(query, `\`, "/")
 	}
-	key := node.Path + "\x00" + query + "\x00" + ordering
+	key := node.Path + "\x00" + query + "\x00" + ordering + "\x00" + opts.Kind
 	var out BrowserListing
 	if opts.Recursive && offset > 0 && opts.Snapshot != "" {
 		var ok bool
@@ -342,6 +358,9 @@ func (s *Service) BrowseLocalFiles(ctx context.Context, p, query string, offset 
 						continue
 					}
 					entry.RelativePath = filepath.ToSlash(rel)
+					if !browserKindMatches(entry, opts.Kind) {
+						continue
+					}
 					if strings.HasPrefix(ordering, "created_") && !entry.Directory {
 						browserCreationTime(ctx, root, rel, &entry)
 					}

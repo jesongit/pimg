@@ -93,7 +93,7 @@ func (s *Service) browseIndexedFiles(ctx context.Context, p, query string, offse
 	if opts.Recursive && runtime.GOOS == "windows" {
 		query = strings.ReplaceAll(query, `\`, "/")
 	}
-	viewKey := sha256Hex([]byte(base + "\x00" + p + "\x00" + query + "\x00" + ordering + fmt.Sprint(opts.Recursive)))[:16]
+	viewKey := sha256Hex([]byte(base + "\x00" + p + "\x00" + query + "\x00" + ordering + "\x00" + opts.Kind + fmt.Sprint(opts.Recursive)))[:16]
 	out.Snapshot = fmt.Sprintf("idx:%s:%d", viewKey, revision)
 	if offset > 0 && opts.Snapshot != out.Snapshot {
 		return out, true, errors.New("索引已更新，请刷新目录后继续浏览")
@@ -115,6 +115,16 @@ func (s *Service) browseIndexedFiles(ctx context.Context, p, query string, offse
 			where += " AND instr(lower_name,?)>0"
 			args = append(args, query)
 		}
+	}
+	switch opts.Kind {
+	case "folder":
+		where += " AND directory=1"
+	case "image":
+		where += " AND directory=0 AND kind='image'"
+	case "video":
+		where += " AND directory=0 AND kind='video'"
+	case "other":
+		where += " AND directory=0 AND kind NOT IN ('image','video')"
 	}
 	if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM entries WHERE "+where, args...).Scan(&out.Total); err != nil {
 		return out, true, err

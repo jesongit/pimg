@@ -416,6 +416,7 @@ CREATE TABLE file_name_counters(
 	manualMediaTimeSchema,
 	exhibitionSchema,
 	fileExhibitionSchema,
+	bookmarkSchema,
 }
 
 func (db *DB) migrate() error {
