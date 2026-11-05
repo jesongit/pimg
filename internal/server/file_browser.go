@@ -402,7 +402,13 @@ func (s *Server) handleBrowserContent(w http.ResponseWriter, r *http.Request) {
 		s.streamBrowserContent(w, r, q.Get("path"), q.Get("version"), mode, caps)
 		return
 	}
-	file, entry, err := s.Svc.OpenBrowserContent(q.Get("path"), q.Get("version"), mode)
+	var file *os.File
+	var entry store.BrowserEntry
+	if q.Get("download") == "1" && mode == "" {
+		file, entry, err = s.Svc.OpenBrowserDownload(q.Get("path"), q.Get("version"))
+	} else {
+		file, entry, err = s.Svc.OpenBrowserContent(q.Get("path"), q.Get("version"), mode)
+	}
 	if err != nil {
 		if s.Log != nil {
 			// diagnose problematic playbacks: which file, mode and stream flag

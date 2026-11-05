@@ -1,6 +1,6 @@
 # 部署与升级
 
-正式镜像：[posase/pimg](https://hub.docker.com/r/posase/pimg)，当前版本 `v1.0.55`，仅 `linux/amd64`。内置前端、FFmpeg、FFprobe 和 HEIC 预览工具。
+正式镜像：[posase/pimg](https://hub.docker.com/r/posase/pimg)，当前版本 `v1.0.56`，仅 `linux/amd64`。内置前端、FFmpeg、FFprobe 和 HEIC 预览工具。
 
 ## Docker
 
@@ -13,7 +13,7 @@ docker run -d --name pimg --restart unless-stopped \
   -v /opt/pimg/runtime:/pimg/runtime \
   -e PIMG_COLD_STORAGE=local \
   -e PIMG_HOT_STORAGE=local \
-  posase/pimg:v1.0.55
+  posase/pimg:v1.0.56
 ```
 
 首次默认 `admin/admin`，登录后按提示更换密码。可通过 `PIMG_ADMIN_USERNAME`、`PIMG_ADMIN_PASSWORD` 指定初始账号；已有数据库使用原账号，不会被新环境值重置。
@@ -73,7 +73,7 @@ docker compose up -d --no-deps --no-build pimg
 
 `docker run` 部署只替换镜像并重建 PIMG 容器，原挂载、环境变量、端口、网络与素材路径全部沿用。不要使用 `down -v` 或删除原数据卷。
 
-当前使用 schema 31；从 `v1.0.53` 升级到 `v1.0.55` 无新增数据库迁移。更早版本需要迁移时，先生成并校验内置数据库、密钥、会话和配置备份；失败则停止启动。内置备份不包含全部媒体，不能替代完整备份。
+当前使用 schema 31；从 `v1.0.53` 升级到 `v1.0.56` 无新增数据库迁移。更早版本需要迁移时，先生成并校验内置数据库、密钥、会话和配置备份；失败则停止启动。内置备份不包含全部媒体，不能替代完整备份。
 
 ```sh
 docker exec pimg /app/pimg version

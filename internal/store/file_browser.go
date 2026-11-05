@@ -95,9 +95,19 @@ func (s *Service) BrowserEntryInfo(p string) (BrowserEntry, error) {
 	return s.browserEntry(abs, info), nil
 }
 
+// OpenBrowserSource opens media for previews and compatibility conversions.
+func (s *Service) OpenBrowserSource(p, version string) (*os.File, BrowserEntry, error) {
+	return s.openBrowserFile(p, version, true)
+}
+
+// OpenBrowserDownload opens any regular source file for an original download.
+func (s *Service) OpenBrowserDownload(p, version string) (*os.File, BrowserEntry, error) {
+	return s.openBrowserFile(p, version, false)
+}
+
 // Open every source read-only through os.Root; check the opened file as well as
 // the directory entry so replacement races cannot reuse a previous view.
-func (s *Service) OpenBrowserSource(p, version string) (*os.File, BrowserEntry, error) {
+func (s *Service) openBrowserFile(p, version string, mediaOnly bool) (*os.File, BrowserEntry, error) {
 	abs, err := s.absoluteImportPath(p)
 	if err != nil || version == "" {
 		return nil, BrowserEntry{}, errors.New("文件参数无效，请刷新目录")
@@ -112,13 +122,13 @@ func (s *Service) OpenBrowserSource(p, version string) (*os.File, BrowserEntry, 
 		return nil, BrowserEntry{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, BrowserEntry{}, errors.New("只能查看普通媒体文件")
+		return nil, BrowserEntry{}, errors.New("只能读取普通文件")
 	}
 	entry := s.browserEntry(abs, info)
 	if entry.Version != version {
 		return nil, entry, ErrSourceChanged
 	}
-	if entry.Kind != "image" && entry.Kind != "video" {
+	if mediaOnly && entry.Kind != "image" && entry.Kind != "video" {
 		return nil, entry, errors.New("此格式不支持在线查看")
 	}
 	file, err := root.Open(filepath.Base(abs))

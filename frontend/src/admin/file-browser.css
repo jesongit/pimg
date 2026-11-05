@@ -118,18 +118,21 @@
 @media(max-width:760px){.file-bookmark-chip-remove{opacity:1}.file-bookmark-menu{max-height:min(76vh,560px)}}
 
 /* 行尾收藏图标 + 收藏栏末尾新建文件夹 */
-.browser-mark-column{width:52px}
+.browser-mark-column{width:88px}
 .browser-table th.browser-mark-column{padding:0 8px 0 0}
 .browser-table td.browser-mark-cell{padding:0 8px 0 0;text-align:right}
 .browser-mark-button{padding:6px;color:var(--ink-3)}
 .browser-mark-button:hover{background:var(--ground-2);color:var(--ink)}
 .browser-mark-button[aria-pressed=true]{color:var(--crayon-hi)}
 .browser-mark-button svg{display:block}
+.browser-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:2px}
+.browser-row-actions .browser-mark-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;min-height:36px}
 .file-bookmarks-add{flex-shrink:0;margin-left:6px;padding-left:8px;border-left:1px solid var(--hairline-soft);color:var(--ink-2);border-radius:0}
 .file-bookmarks-add:hover{background:var(--ground-2);color:var(--ink)}
 @media(max-width:760px){
  .browser-table .browser-name-cell{grid-column:2/3}
  .browser-mark-cell{grid-column:3;grid-row:1;display:flex;justify-content:flex-end;align-items:flex-start;padding:2px 4px}
+ .browser-row-actions .browser-mark-button{width:44px;min-height:44px}
  .browser-type-cell{grid-column:2;grid-row:2}
  .browser-table .browser-size-cell{grid-column:3;grid-row:2}
 }
