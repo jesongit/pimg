@@ -7,6 +7,8 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 
 func (s *Server) registerFileBrowser(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/file-browser", s.auth(s.handleFileBrowser))
+	mux.HandleFunc("GET /api/admin/file-browser/entry", s.auth(s.handleBrowserEntry))
 	mux.HandleFunc("POST /api/admin/file-browser/view", s.auth(s.handleBrowserView))
 	mux.HandleFunc("GET /api/admin/file-browser/content", s.auth(s.handleBrowserContent))
 	mux.HandleFunc("POST /api/admin/file-browser/extract", s.auth(s.handleBrowserExtract))
@@ -142,6 +145,23 @@ func (s *Server) handleBrowserHardlink(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleBrowserEntry(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	entry, err := s.Svc.BrowserEntryInfo(r.URL.Query().Get("path"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			fail(w, 404, "文件或目录已不存在")
+			return
+		}
+		fail(w, 400, "无法读取文件或目录："+err.Error())
+		return
+	}
+	writeJSON(w, 200, struct {
+		Entry  store.BrowserEntry `json:"entry"`
+		Parent string             `json:"parent"`
+	}{Entry: entry, Parent: store.EncodeSourcePath(filepath.Dir(entry.Path))})
 }
 
 func (s *Server) handleFileBrowser(w http.ResponseWriter, r *http.Request) {

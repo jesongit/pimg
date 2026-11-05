@@ -91,6 +91,7 @@ node_modules/
 !/docs/releases/v1.0.52.md
 !/docs/releases/v1.0.53.md
 !/docs/releases/v1.0.54.md
+!/docs/releases/v1.0.55.md
 
 # Operating system and editor state
 .DS_Store

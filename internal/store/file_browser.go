@@ -66,6 +66,35 @@ func (s *Service) browserEntry(p string, info fs.FileInfo) BrowserEntry {
 	return BrowserEntry{ImportPath: ImportPath{Path: p, Name: filepath.Base(p), Directory: info.IsDir(), Size: info.Size()}, Ext: ext, Kind: media.Kind, MIME: media.Mime, Version: localVersion(info), ModifiedAt: info.ModTime().Unix(), modifiedNS: info.ModTime().UnixNano(), Importable: !info.IsDir() && importable && media.Kind != "other"}
 }
 
+// BrowserEntryInfo resolves one source directly, independently of listing pages
+// and the rebuildable index. It only reads filesystem metadata.
+func (s *Service) BrowserEntryInfo(p string) (BrowserEntry, error) {
+	if p == "" {
+		return BrowserEntry{}, errors.New("请选择文件或目录")
+	}
+	abs, err := s.absoluteImportPath(p)
+	if err != nil {
+		return BrowserEntry{}, err
+	}
+	root, err := openImportRoot(filepath.Dir(abs))
+	if err != nil {
+		return BrowserEntry{}, err
+	}
+	defer root.Close()
+	name := filepath.Base(abs)
+	if abs == filepath.Dir(abs) {
+		name = "."
+	}
+	info, err := importInfo(root, name)
+	if err != nil {
+		return BrowserEntry{}, err
+	}
+	if !info.IsDir() && !info.Mode().IsRegular() {
+		return BrowserEntry{}, errors.New("请选择普通文件或目录")
+	}
+	return s.browserEntry(abs, info), nil
+}
+
 // Open every source read-only through os.Root; check the opened file as well as
 // the directory entry so replacement races cannot reuse a previous view.
 func (s *Service) OpenBrowserSource(p, version string) (*os.File, BrowserEntry, error) {

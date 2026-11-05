@@ -30,7 +30,6 @@ const dateFormat = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2
 const filterOptions = [{ value: "", label: "全部" }, { value: "folder", label: "文件夹" }, { value: "image", label: "图片" }, { value: "video", label: "视频" }, { value: "other", label: "其他文件" }];
 function fileTime(value: number) { return value ? dateFormat.format(new Date(value * 1000)) : "—"; }
 function isRootPath(value: string) { return /^(?:\/+|[a-z]:[\\/]*|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*)$/i.test(value); }
-function parentPath(value: string) { const cut = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\")); return cut > 0 ? value.slice(0, cut) : value; }
 
 export default function FileBrowser() {
   const { actor } = useGallery(), toast = useToast();
@@ -53,9 +52,15 @@ export default function FileBrowser() {
   const currentFolder = data ? data.breadcrumbs[data.breadcrumbs.length - 1] || { path: data.path, name: data.path } : null;
   const bookmarks = useFileBookmarks(actor.owner_id);
   const [revision, setRevision] = useState(0), [more, setMore] = useState(false);
-  const [pendingFile, setPendingFile] = useState<string | null>(null);
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
+  const bookmarkLookup = useRef<AbortController | null>(null);
   const [indexChanged, setIndexChanged] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set()), [detail, setDetail] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set()), [detail, setDetail] = useState<{ entry: BrowserEntry; scope: string } | null>(null);
+  const scope = JSON.stringify([storageKey, path, query, sort, filter, recursive, revision]);
+  const openPreview = (entry: BrowserEntry) => {
+    bookmarkLookup.current?.abort(); bookmarkLookup.current = null;
+    setBookmarkLoading(false); setDetail({ entry, scope });
+  };
   const [importing, setImporting] = useState<{ paths: string[]; directory: boolean } | null>(null);
   const sequence = useRef(0), root = useRef<HTMLDivElement>(null), breadcrumbs = useRef<HTMLElement>(null), anchor = useRef<string | null>(null);
   useEffect(() => {
@@ -65,12 +70,34 @@ export default function FileBrowser() {
     reveal(); const observer = new ResizeObserver(reveal); observer.observe(nav);
     return () => observer.disconnect();
   }, [data?.path]);
-  const visit = useCallback((next: string) => { setSearch(""); setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(filter ? { filter } : {}) }); }, [setParams, sort, filter]);
+  const visit = useCallback((next: string) => {
+    bookmarkLookup.current?.abort(); bookmarkLookup.current = null;
+    setBookmarkLoading(false); setDetail(null); setSearch("");
+    setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(filter ? { filter } : {}) });
+  }, [setParams, sort, filter]);
   const openBookmark = useCallback((node: BookmarkNode) => {
     if (!node.path) return;
-    if (node.directory === false) { setPendingFile(node.path); visit(parentPath(node.path)); }
-    else visit(node.path);
-  }, [visit]);
+    bookmarkLookup.current?.abort();
+    const controller = new AbortController(); bookmarkLookup.current = controller;
+    setBookmarkLoading(true);
+    // Resolve the source itself: a directory page may be stale, filtered,
+    // rebuilding or simply not contain the bookmarked file's page yet.
+    void api.get<{ entry: BrowserEntry; parent: string }>(`${browserBase}/entry?${new URLSearchParams({ path: node.path })}`, controller.signal).then(({ entry, parent }) => {
+      if (controller.signal.aborted) return;
+      visit(entry.directory ? entry.path : parent);
+      if (entry.directory) return;
+      if (entry.kind !== "image" && entry.kind !== "video") { toast("此类型的文件暂不支持预览", "err"); return; }
+      setDetail({ entry, scope: JSON.stringify([storageKey, parent, "", sort, filter, false, revision]) });
+    }).catch(cause => {
+      if (!controller.signal.aborted) toast(cause instanceof TypeError ? "读取收藏失败，请检查网络后重试" : cause.message || "无法打开收藏，请检查文件是否存在及目录读取权限", "err");
+    }).finally(() => {
+      if (bookmarkLookup.current === controller) { bookmarkLookup.current = null; setBookmarkLoading(false); }
+    });
+  }, [visit, storageKey, sort, filter, revision, toast]);
+  useEffect(() => {
+    setBookmarkLoading(false);
+    return () => { bookmarkLookup.current?.abort(); bookmarkLookup.current = null; };
+  }, [scope]);
   const changeSort = (value: string) => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(value !== "name" ? { sort: value } : {}), ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) });
   const changeFilter = (value: string) => setParams({ path: data?.path || path, ...(search.trim() ? { q: search.trim() } : {}), ...(sort !== "name" ? { sort } : {}), ...(value ? { filter: value } : {}), ...(recursive ? { recursive: "1" } : {}) });
   const toggleExpanded = () => {
@@ -80,7 +107,9 @@ export default function FileBrowser() {
   };
   useEffect(() => {
     const controller = new AbortController(), request = ++sequence.current;
-    setLoading(true); setError(""); setData(null); setSelected(new Set()); setDetail(null); anchor.current = null; setMore(false); setIndexChanged(false);
+    setLoading(true); setError(""); setData(null); setSelected(new Set());
+    setDetail(previous => previous?.scope === scope ? previous : null);
+    anchor.current = null; setMore(false); setIndexChanged(false);
     void api.get<BrowserListing>(`${browserBase}?${new URLSearchParams({ path, q: query, sort, ...(filter ? { filter } : {}), ...(recursive ? { recursive: "1" } : {}) })}`, controller.signal).then(value => {
       if (request !== sequence.current || controller.signal.aborted) return;
       setData(value);
@@ -88,14 +117,7 @@ export default function FileBrowser() {
     }).catch(cause => { if (!controller.signal.aborted && request === sequence.current) setError(cause.message); })
       .finally(() => { if (!controller.signal.aborted && request === sequence.current) setLoading(false); });
     return () => controller.abort();
-  }, [path, query, sort, filter, recursive, revision, storageKey]);
-  useEffect(() => {
-    if (!pendingFile || loading) return;
-    const target = data?.items.find(entry => entry.path === pendingFile);
-    if (target && (target.kind === "image" || target.kind === "video")) setDetail(pendingFile);
-    else if (data) toast("收藏的文件不存在或无法预览", "err");
-    setPendingFile(null);
-  }, [pendingFile, loading, data]);
+  }, [scope]);
   useEffect(() => {
     if (!data?.indexed || loading) return;
     const controller = new AbortController(), request = sequence.current;
@@ -162,17 +184,19 @@ export default function FileBrowser() {
   };
   const drag = useDragSelection({ root, enabled: !loading && !detail && !importing && selectable.length > 0, scope: `${path}:${query}:${sort}:${recursive}:${revision}`, selected,
     onHit: paths => setSelected(previous => { const next = new Set(previous); paths.forEach(value => next.has(value) ? next.delete(value) : next.add(value)); return next; }), onRestore: setSelected });
-  const active = media.findIndex(entry => entry.path === detail), current = media[active];
+  const current = detail?.scope === scope ? detail.entry : undefined;
+  const active = current ? media.findIndex(entry => entry.path === current.path) : -1;
   const importPaths = (paths: string[], directory = false) => {
     if (!paths.length) return;
     if (paths.length > 200) { toast("一次最多选择 200 项；也可以使用“导入当前目录”。", "err"); return; }
-    setDetail(null); setImporting({ paths, directory });
+    bookmarkLookup.current?.abort(); bookmarkLookup.current = null;
+    setBookmarkLoading(false); setDetail(null); setImporting({ paths, directory });
   };
   const folderNav = data?.breadcrumbs || [];
   const openEntry = (entry: BrowserEntry, range = false) => {
     if (entry.directory) visit(entry.path);
     else if (selected.size && entry.importable) toggle(entry, range);
-    else if (entry.kind !== "other") setDetail(entry.path);
+    else if (entry.kind !== "other") openPreview(entry);
   };
   const isArchive = (entry: BrowserEntry) => !entry.directory && /^(zip|rar|7z|iso)$/i.test(entry.ext);
   const archiveFileExt = (ext: string) => /^(zip|rar|7z|iso)$/i.test(ext);
@@ -254,11 +278,11 @@ export default function FileBrowser() {
       <div className="file-browser-actions">
         <label className="file-browser-search"><IconSearch size={16} /><input className="input" aria-label={recursive ? "搜索所有图片和视频" : "搜索当前目录"} placeholder={recursive ? "搜索所有图片和视频" : "搜索当前目录"} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="btn btn-ghost" aria-label="清除文件搜索" onClick={() => setSearch("")}><IconX size={15} /></button>}</label>
         <FilterSelect label="筛选" value={filter} options={filterOptions} onChange={changeFilter} active={!!filter} title="筛选文件类型" width={150} />
-        <span className="file-browser-count" role="status">{[data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : "", filter ? `（${filterOptions.find(option => option.value === filter)?.label}）` : ""].join("")}</span>
+        <span className="file-browser-count" role="status">{bookmarkLoading ? "正在打开收藏…" : [data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : "", filter ? `（${filterOptions.find(option => option.value === filter)?.label}）` : ""].join("")}</span>
       </div>
     </div>
     <FileBookmarksBar tree={bookmarks.tree} currentPath={currentFolder?.path} onOpen={openBookmark} onRemoveItem={bookmarks.removeItem} onRemoveFolder={bookmarks.removeFolder} onCreateFolder={bookmarks.createFolder} onMove={bookmarks.move} />
-    <div className="file-browser-content" aria-busy={loading}>
+    <div className="file-browser-content" aria-busy={loading || bookmarkLoading}>
       {data?.indexed && <FloatingFeedback className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</FloatingFeedback>}
       {!!data?.scan_limited && <FloatingFeedback className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</FloatingFeedback>}
       {error ? <FloatingFeedback className="empty" role="alert"><p>{error}</p><p className="detail-hint">请检查目录的读取权限及 Docker 挂载，或返回默认目录继续浏览。</p><button type="button" className="btn" onClick={() => setRevision(value => value + 1)}>重新读取</button><button type="button" className="btn btn-ghost" onClick={() => visit("")}>返回默认目录</button>{bookmarks.hasPath(path) && <button type="button" className="btn btn-danger" onClick={() => void bookmarks.removePath(path)}>从收藏栏移除</button>}</FloatingFeedback> : loading ? <div className="empty" role="status">{recursive ? "正在整理当前目录及子文件夹中的图片和视频…" : "正在读取目录…"}</div> : !items.length ? <div className="empty"><IconFolder size={32} stroke={1.3} /><p>{data?.index_building ? "索引正在建立，文件会陆续显示…" : data?.scan_limited ? "本次扫描未找到图片或视频，请进入子文件夹后浏览" : recursive ? query ? "没有匹配的图片或视频" : "当前目录及子文件夹中没有图片或视频" : query ? "当前目录没有匹配的文件或文件夹" : filter ? "当前目录没有符合筛选条件的项目" : "这个文件夹是空的"}</p>{query && <button type="button" className="btn" onClick={() => setSearch("")}>清除搜索</button>}</div> : <>
@@ -282,7 +306,7 @@ export default function FileBrowser() {
       </>}
     </div>
     {selected.size > 0 && <div className="batch-bar file-browser-batch" aria-label="文件导入操作"><span role="status">已选 {selected.size} 项</span><button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>取消选择</button><MultiBookmarkButton targets={bookmarkTargets} tree={bookmarks.tree} onAdd={bookmarks.add} /><button type="button" className="btn btn-crayon" onClick={() => importPaths([...selected])}>导入到相册</button></div>}
-    {current && <MediaFullscreenSession><BrowserViewer key={current.path + current.version} entry={current} position={`${active + 1} / ${media.length}${data?.next_offset ? "+" : ""}`} selected={selected.has(current.path)} onSelect={() => toggle(current)} onPrev={active > 0 ? () => setDetail(media[active - 1].path) : undefined} onNext={active + 1 < media.length ? () => setDetail(media[active + 1].path) : data?.next_offset ? () => { void loadMore().then(result => { const next = result?.items.find(entry => entry.kind === "image" || entry.kind === "video"); if (next) setDetail(next.path); }); } : undefined} onClose={() => setDetail(null)} onImport={() => importPaths([current.path])} /></MediaFullscreenSession>}
+    {current && <MediaFullscreenSession><BrowserViewer key={current.path + current.version} entry={current} position={active < 0 ? "收藏文件" : `${active + 1} / ${media.length}${data?.next_offset ? "+" : ""}`} selected={selected.has(current.path)} onSelect={() => toggle(current)} onPrev={active > 0 ? () => openPreview(media[active - 1]) : undefined} onNext={active < 0 ? undefined : active + 1 < media.length ? () => openPreview(media[active + 1]) : data?.next_offset ? () => { void loadMore().then(result => { const next = result?.items.find(entry => entry.kind === "image" || entry.kind === "video"); if (next) openPreview(next); }); } : undefined} onClose={() => setDetail(null)} onImport={() => importPaths([current.path])} /></MediaFullscreenSession>}
     {importing && <LocalImport albums={[]} paths={importing.paths} directoryImport={importing.directory} onClose={() => setImporting(null)} />}
     {mkdirOpen ? <><div className="overlay" onClick={() => !mkdirBusy && setMkdirOpen(false)} /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="mkdir-title" onClick={event => event.stopPropagation()}>
       <div className="dhead"><h2 id="mkdir-title">新建文件夹</h2><button type="button" className="btn btn-ghost" disabled={mkdirBusy} onClick={() => setMkdirOpen(false)}>关闭</button></div>
