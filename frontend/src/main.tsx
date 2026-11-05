@@ -8,8 +8,10 @@ import "./styles/base.css";
 import "./styles/components.css";
 import App from "./App";
 import Home from "./pages/Home";
-import Login from "./pages/Login";
-import AdminApp from "./admin/AdminApp";
+import { PageLoading, RouteLoadError } from "./RouteLoading";
+
+const Login = React.lazy(() => import("./pages/Login"));
+const AdminApp = React.lazy(() => import("./admin/AdminApp"));
 import "./styles/surfaces.css";
 import "./admin/library-toolbar-layout.css";
 
@@ -17,11 +19,12 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <App />,
+    errorElement: <RouteLoadError />,
     children: [
       { index: true, element: <Home /> },
-      { path: "login", element: <Login /> },
-      { path: "admin/*", element: <AdminApp /> },
-      { path: "library/*", element: <AdminApp /> },
+      { path: "login", element: <React.Suspense fallback={<PageLoading />}><Login /></React.Suspense> },
+      { path: "admin/*", element: <React.Suspense fallback={<PageLoading />}><AdminApp /></React.Suspense> },
+      { path: "library/*", element: <React.Suspense fallback={<PageLoading />}><AdminApp /></React.Suspense> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

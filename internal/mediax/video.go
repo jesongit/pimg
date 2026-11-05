@@ -397,12 +397,16 @@ func runVideoProcess(cmd *exec.Cmd) error {
 	return nil
 }
 
-type limitedVideoDiagnostic struct{ bytes.Buffer }
+// Keep Buffer as a named field: a promoted ReadFrom would let os/exec bypass
+// Write's diagnostic limit through io.Copy.
+type limitedVideoDiagnostic struct{ buf bytes.Buffer }
+
+func (b *limitedVideoDiagnostic) Bytes() []byte { return b.buf.Bytes() }
 
 func (b *limitedVideoDiagnostic) Write(p []byte) (int, error) {
 	n := len(p)
-	if b.Len() < 4096 {
-		_, _ = b.Buffer.Write(p[:min(len(p), 4096-b.Len())])
+	if b.buf.Len() < 4096 {
+		_, _ = b.buf.Write(p[:min(len(p), 4096-b.buf.Len())])
 	}
 	return n, nil
 }

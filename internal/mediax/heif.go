@@ -29,16 +29,20 @@ func isHEIF(path string) bool {
 	if size < 16 || size > n {
 		return false
 	}
+	heif := false
 	for i := 8; i+4 <= size; i += 4 {
 		if i == 12 {
 			continue
 		} // minor version, not a brand
 		switch string(header[i : i+4]) {
+		case "avif", "avis":
+			// AVIF also advertises mif1; keep it on the FFmpeg path.
+			return false
 		case "heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1":
-			return true
+			heif = true
 		}
 	}
-	return false
+	return heif
 }
 
 // libheif decodes the primary image (including its orientation), never auxiliary
@@ -46,7 +50,10 @@ func isHEIF(path string) bool {
 func heifPNG(ctx context.Context, source, dest string, maxDim int) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "heif-thumbnailer", "-p", "-s", strconv.Itoa(maxDim), source, dest).CombinedOutput()
+	if err := checkHEIFPixels(ctx, source); err != nil {
+		return err
+	}
+	out, err := imageDecoderOutput(exec.CommandContext(ctx, "heif-thumbnailer", "-p", "-s", strconv.Itoa(maxDim), source, dest))
 	if err != nil {
 		return fmt.Errorf("HEIF 解码失败: %w: %s", err, truncate(out, 200))
 	}
@@ -54,8 +61,8 @@ func heifPNG(ctx context.Context, source, dest string, maxDim int) error {
 	if err != nil {
 		return err
 	}
-	if w <= 0 || h <= 0 || int64(w)*int64(h) > MaxPixels {
-		return fmt.Errorf("HEIF 图片像素数超限(%dx%d)", w, h)
+	if err := checkImagePixels(w, h); err != nil {
+		return err
 	}
 	return nil
 }

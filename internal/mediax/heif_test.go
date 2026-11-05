@@ -17,6 +17,7 @@ func TestHEIFSignatureWithoutExtension(t *testing.T) {
 	}{
 		{"heic", "hevc", true}, {"mif1", "heic", true}, {"heix", "", true},
 		{"isom", "mp42", false}, {"qt  ", "", false}, {"avif", "av01", false},
+		{"avif", "mif1", false}, {"mif1", "avif", false}, {"avis", "msf1", false},
 	} {
 		b := make([]byte, 20)
 		binary.BigEndian.PutUint32(b, uint32(len(b)))

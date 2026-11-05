@@ -1,18 +1,10 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useContext, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { api, displaySiteName, setStorageCatalog, setApiSession } from "../api";
 import type { AuthUser } from "../api";
 import { SiteCtx } from "../App";
-import Library from "./Library";
-import Albums from "./Albums";
-import FileBrowser from "./FileBrowser";
-
-import Logs from "./Logs";
-import Tasks from "./Tasks";
 import { TaskBadge, TaskStatusProvider } from "./TaskStatus";
-import Users from "./Users";
-import StoragePage from "./StoragePage";
-import Settings from "./Settings";
+import { PageLoading } from "../RouteLoading";
 import AdminCredentials from "./AdminCredentials";
 import TwoFactor from "./TwoFactor";
 import "./admin.css";
@@ -28,6 +20,15 @@ import "./logs.css";
 import { UploadProvider } from "./Uploads";
 import { GalleryProvider, useGallery } from "./GalleryScope";
 import {libraryHref,rememberedLibrary} from "./libraryMemory";
+
+const Library = lazy(() => import("./Library"));
+const Albums = lazy(() => import("./Albums"));
+const FileBrowser = lazy(() => import("./FileBrowser"));
+const Logs = lazy(() => import("./Logs"));
+const Tasks = lazy(() => import("./Tasks"));
+const Users = lazy(() => import("./Users"));
+const StoragePage = lazy(() => import("./StoragePage"));
+const Settings = lazy(() => import("./Settings"));
 
 export default function AdminApp() {
   const nav = useNavigate(), location = useLocation();
@@ -83,7 +84,7 @@ export default function AdminApp() {
         <div className="admin-utilities"><span className="account-name" title={me.username}>{me.username}</span><button type="button" className="btn btn-ghost account-logout" onClick={logout}>退出登录</button></div>
       </div></header>
       <main className="main">
-        <Routes>
+        <Suspense fallback={<PageLoading />}><Routes>
           <Route index element={<ScopedLibrary />} />
           <Route path="albums" element={<Albums />} />
           {!admin && <Route path="security" element={<div className="account-security-page"><h1>账号安全</h1><TwoFactor /></div>} />}
@@ -98,7 +99,7 @@ export default function AdminApp() {
           <Route path="settings" element={<Settings username={me.username} />} />
           </>}
           <Route path="*" element={<Navigate to={root} replace />} />
-        </Routes>
+        </Routes></Suspense>
       </main>
     </div></TaskStatusProvider></UploadProvider></GalleryProvider>
   );

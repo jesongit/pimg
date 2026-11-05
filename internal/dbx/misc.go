@@ -245,9 +245,17 @@ func (db *DB) RevokeToken(id string) error {
 	return err
 }
 
-// TouchToken 记录最后使用。
-func (db *DB) TouchToken(hash string) {
-	db.Exec(`UPDATE api_tokens SET last_used_at=? WHERE token_hash=?`, now(), hash)
+// TouchToken records last use with one-minute precision. Authentication still
+// reads the current token on every request, so throttling this telemetry write
+// never delays revocation or account-state checks.
+func (db *DB) TouchToken(token *APIToken) {
+	at := now()
+	if token.LastUsedAt.Valid && token.LastUsedAt.Int64 > at-60 {
+		return
+	}
+	// The predicate also coalesces concurrent requests holding the same old row.
+	db.Exec(`UPDATE api_tokens SET last_used_at=? WHERE token_hash=? AND revoked_at IS NULL
+		AND (last_used_at IS NULL OR last_used_at<=?)`, at, token.TokenHash, at-60)
 }
 
 // ---- albums ----

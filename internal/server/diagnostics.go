@@ -81,7 +81,7 @@ func (s *Server) diagnosticAuth(next http.HandlerFunc) http.HandlerFunc {
 					hash := hex.EncodeToString(sum[:])
 					if t, err := s.DB.GetTokenByHash(hash); err == nil && t.OwnerID == dbx.AdminOwner && (t.Scope == "admin" || t.Scope == "diagnostics") {
 						allowed = true
-						s.DB.TouchToken(hash)
+						s.DB.TouchToken(t)
 					}
 				}
 			}

@@ -16,11 +16,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 // Thumb 缩略图产物。
@@ -145,11 +147,13 @@ func makeThumb(path, kind string, maxDim int, blurred bool) (*Thumb, error) {
 	if kind == "image" {
 		if t, err := goThumbOption(path, maxDim, blurred); err == nil {
 			return t, nil
+		} else if errors.Is(err, ErrMaxPixels) {
+			return nil, err
 		}
 		if isHEIF(path) {
 			return heifThumb(path, maxDim, blurred)
 		}
-		// Go 解码失败（webp/avif 等）→ ffmpeg 兜底
+		// Go 解码失败（avif 等）→ ffmpeg 兜底
 	}
 	if !HasFFmpeg() {
 		return nil, errors.New("无法生成缩略图（图片解码失败且 ffmpeg 不可用）")
@@ -168,8 +172,8 @@ func goThumbOption(path string, maxDim int, blurred bool) (*Thumb, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
-		return nil, errors.New("图片像素数超限")
+	if err := checkImagePixels(cfg.Width, cfg.Height); err != nil {
+		return nil, err
 	}
 	if _, err := f.Seek(0, 0); err != nil {
 		return nil, err
@@ -179,8 +183,8 @@ func goThumbOption(path string, maxDim int, blurred bool) (*Thumb, error) {
 		return nil, err
 	}
 	b := img.Bounds()
-	if b.Dx()*b.Dy() > MaxPixels {
-		return nil, fmt.Errorf("图片像素数超限(%dx%d)", b.Dx(), b.Dy())
+	if err := checkImagePixels(b.Dx(), b.Dy()); err != nil {
+		return nil, err
 	}
 	t := scaleToFit(img, maxDim)
 	data, err := compactJPEG(t)
@@ -206,9 +210,17 @@ func ffmpegThumb(path string, maxDim int, video bool) (*Thumb, error) {
 	return ffmpegThumbOption(path, maxDim, video, true)
 }
 func ffmpegThumbOption(path string, maxDim int, video, blurred bool) (*Thumb, error) {
+	if !video {
+		if err := checkFFmpegImagePixels(context.Background(), path); err != nil {
+			return nil, err
+		}
+	}
 	tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pimg-thumb-%d.png", time.Now().UnixNano()))
 	defer os.Remove(tmp)
 	args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error"}
+	if !video {
+		args = append(args, "-max_pixels", strconv.Itoa(MaxPixels))
+	}
 	var seek string
 	if video {
 		duration, _, _ := ProbeVideo(path)
@@ -228,7 +240,7 @@ func ffmpegThumbOption(path string, maxDim int, video, blurred bool) (*Thumb, er
 			input = append(input, "-ss", seek)
 		}
 		input = append(input, output...)
-		if out, err := exec.CommandContext(ctx, "ffmpeg", input...).CombinedOutput(); err != nil {
+		if out, err := imageDecoderOutput(exec.CommandContext(ctx, "ffmpeg", input...)); err != nil {
 			return nil, fmt.Errorf("ffmpeg 生成封面失败: %v: %s", err, truncate(out, 200))
 		}
 		return goThumbOption(tmp, maxDim, blurred)
@@ -250,14 +262,17 @@ func CompactPreview(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
-		return nil, errors.New("预览图像素数超限")
+	if err := checkImagePixels(cfg.Width, cfg.Height); err != nil {
+		return nil, err
 	}
 	if format == "jpeg" && cfg.Width <= PreviewMaxDimension && cfg.Height <= PreviewMaxDimension && len(data) <= PreviewTargetBytes {
 		return bytes.Clone(data), nil
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
+		return nil, err
+	}
+	if err := checkImagePixels(img.Bounds().Dx(), img.Bounds().Dy()); err != nil {
 		return nil, err
 	}
 	return compactJPEG(scaleToFit(img, PreviewMaxDimension))

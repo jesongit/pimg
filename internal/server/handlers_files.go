@@ -47,10 +47,11 @@ func (s *Server) fileJSON(f *dbx.File, tempObjects ...*dbx.TempObject) map[strin
 		}
 	}
 	_, accessErr := s.DB.MutationFile(f.ID)
-	return s.fileJSONFrom(f, replicas, legacy, accessErr == nil && f.PurgeState.String == "", tempObjects...)
+	presentation, _ := s.DB.FilePresentations(context.Background(), []string{f.ID}, time.Now().Unix())
+	return s.fileJSONFrom(f, replicas, legacy, presentation[f.ID], accessErr == nil && f.PurgeState.String == "", tempObjects...)
 }
 
-func (s *Server) fileJSONFrom(f *dbx.File, replicas []dbx.MediaReplica, legacy *dbx.FileArchiveMetadata, allowLinks bool, tempObjects ...*dbx.TempObject) map[string]any {
+func (s *Server) fileJSONFrom(f *dbx.File, replicas []dbx.MediaReplica, legacy *dbx.FileArchiveMetadata, presentation dbx.FilePresentation, allowLinks bool, tempObjects ...*dbx.TempObject) map[string]any {
 	var manifest dbx.MediaReplica
 	var localReady bool
 	var links *store.AvailableLinks
@@ -103,10 +104,7 @@ func (s *Server) fileJSONFrom(f *dbx.File, replicas []dbx.MediaReplica, legacy *
 	if f.Published && f.PublishedPath.Valid && f.PublishedPath.String != "" && f.HotBackend != "" {
 		location := fileStorageLocation{Role: "published", Backend: f.HotBackend}
 		if f.MediaVersion == 2 {
-			var encrypted bool
-			if s.DB.QueryRow(`SELECT encrypted FROM media_publications WHERE file_id=? AND backend=? AND object_key=? AND ready=1`, f.ID, f.HotBackend, f.PublishedPath.String).Scan(&encrypted) == nil {
-				location.Encrypted = &encrypted
-			}
+			location.Encrypted = presentation.PublicationEncrypted
 		}
 		locations = append(locations, location)
 	}
@@ -114,14 +112,13 @@ func (s *Server) fileJSONFrom(f *dbx.File, replicas []dbx.MediaReplica, legacy *
 		confirmed := obj.ReadyAt.Valid
 		location := fileStorageLocation{Role: "temporary", Backend: obj.Backend, Kind: obj.Kind, ExpiresAt: obj.ExpiresAt, Confirmed: &confirmed}
 		if f.MediaVersion == 2 {
-			var encrypted bool
-			if s.DB.QueryRow(`SELECT encrypted FROM media_temporary WHERE object_id=?`, obj.ID).Scan(&encrypted) == nil {
+			if encrypted, ok := presentation.TemporaryEncrypted[obj.ID]; ok {
 				location.Encrypted = &encrypted
 			}
 		}
 		locations = append(locations, location)
 	}
-	onHome := s.DB.FileExhibited(f.ID)
+	onHome := presentation.Exhibited
 	if f.MediaVersion == 2 {
 		for index := range locations {
 			locations[index].Name = s.Svc.StorageInstanceName(locations[index].Backend)
@@ -480,7 +477,8 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "读取转换状态失败")
 		return
 	}
-	tempObjects, err := s.DB.LiveTempObjects(ids, time.Now().Unix())
+	at := time.Now().Unix()
+	tempObjects, err := s.DB.LiveTempObjects(ids, at)
 	if err != nil {
 		fail(w, 500, "读取文件存储位置失败")
 		return
@@ -503,9 +501,14 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "读取归档位置失败")
 		return
 	}
+	presentation, err := s.DB.FilePresentations(r.Context(), ids, at)
+	if err != nil {
+		fail(w, 500, "读取文件展示状态失败")
+		return
+	}
 	for _, f := range files {
 		conversion := conversions[f.ID]
-		item := s.fileJSONFrom(f, replicas[f.ID], legacyMetadata[f.ID], f.PurgeState.String == "" && (conversion == nil || conversion.Phase == "done"), tempObjects[f.ID]...)
+		item := s.fileJSONFrom(f, replicas[f.ID], legacyMetadata[f.ID], presentation[f.ID], f.PurgeState.String == "" && (conversion == nil || conversion.Phase == "done"), tempObjects[f.ID]...)
 		if strings.HasPrefix(r.URL.Path, "/api/account/") && canPreview(f) {
 			item["thumb_url"] = requestContentURL(r, f.ID, "thumb")
 		}

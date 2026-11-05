@@ -2,9 +2,9 @@
 
 ## 技术栈
 
-- Go 1.26.9、SQLite；入口 `cmd/pimg`。
+- Go 1.26.10 或更新的修复版本、SQLite；入口 `cmd/pimg`。
 - Node.js 22、React、TypeScript、Vite；前端位于 `frontend/`。
-- FFmpeg、FFprobe；HEIC/HEIF 预览另需 libheif 的 `heif-thumbnailer`。
+- FFmpeg、FFprobe；HEIC/HEIF 预览另需 libheif 的 `heif-info` 和 `heif-thumbnailer`，先检查原图尺寸再解码。
 
 生产前端通过 `frontend/embed.go` 嵌入 Go 程序，**先构建前端，再编译或测试后端**。
 

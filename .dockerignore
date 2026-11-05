@@ -13,6 +13,7 @@
 
 # Install Linux dependencies and build assets inside their respective stages.
 frontend/node_modules/
+frontend/pnpm-lock.yaml
 frontend/dist/
 frontend/.vite/
 frontend/.env*

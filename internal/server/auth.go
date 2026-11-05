@@ -33,7 +33,7 @@ func (s *Server) resolveBearerToken(r *http.Request) bool {
 		if id := strings.TrimSpace(tok); id != "" {
 			sum := sha256.Sum256([]byte(id))
 			if t, err := s.DB.GetTokenByHash(hex.EncodeToString(sum[:])); err == nil && t.Scope == "admin" && t.OwnerID == dbx.AdminOwner {
-				s.DB.TouchToken(hex.EncodeToString(sum[:]))
+				s.DB.TouchToken(t)
 				return true
 			}
 		}
@@ -144,39 +144,65 @@ type attempt struct {
 }
 
 type loginGuard struct {
-	mu  sync.Mutex
-	ips map[string]*attempt
+	mu        sync.Mutex
+	attempts  map[string]*attempt
+	nextSweep time.Time
 }
 
 func newLoginGuard() *loginGuard {
-	return &loginGuard{ips: map[string]*attempt{}}
+	return &loginGuard{attempts: map[string]*attempt{}}
 }
 
-func (g *loginGuard) allow(ip string) bool {
+// sweepLocked reclaims inactive IP, username and factor budgets without scanning
+// the entire map on every request. Callers hold mu.
+func (g *loginGuard) sweepLocked(now time.Time) {
+	if now.Before(g.nextSweep) {
+		return
+	}
+	for key, a := range g.attempts {
+		if !now.Before(a.until) {
+			delete(g.attempts, key)
+		}
+	}
+	g.nextSweep = now.Add(time.Minute)
+}
+
+func (g *loginGuard) allow(key string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	a := g.ips[ip]
-	if a == nil || time.Now().After(a.until) {
+	now := time.Now()
+	g.sweepLocked(now)
+	a := g.attempts[key]
+	if a == nil || !now.Before(a.until) {
 		return true
 	}
 	return a.count < 5
 }
 
-func (g *loginGuard) fail(ip string) {
+func (g *loginGuard) fail(key string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	a := g.ips[ip]
-	if a == nil || time.Now().After(a.until) {
-		a = &attempt{until: time.Now().Add(15 * time.Minute)}
-		g.ips[ip] = a
+	now := time.Now()
+	g.sweepLocked(now)
+	a := g.attempts[key]
+	if a == nil || !now.Before(a.until) {
+		a = &attempt{until: now.Add(15 * time.Minute)}
+		g.attempts[key] = a
 	}
 	a.count++
 }
 
-func (g *loginGuard) reset(ip string) {
+func (g *loginGuard) reset(key string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	delete(g.ips, ip)
+	delete(g.attempts, key)
+}
+
+// Authentication matches usernames exactly. Hash those same bytes, without
+// trimming or case folding, and keep arbitrary input out of the other key spaces.
+func loginUsernameKey(username string) string {
+	sum := sha256.Sum256([]byte(username))
+	return "login-username:" + hex.EncodeToString(sum[:])
 }
 
 func clientIP(r *http.Request) string {
@@ -211,11 +237,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err.Error())
 		return
 	}
+	usernameKey := loginUsernameKey(req.Username)
 	s.factorMu.Lock()
 	defer s.factorMu.Unlock()
-	// Other completed requests may have exhausted the budget while this body
+	// Other completed requests may have exhausted either budget while this body
 	// was being read. Recheck under the same lock as credential verification.
-	if !s.guard.allow(ip) {
+	if !s.guard.allow(ip) || !s.guard.allow(usernameKey) {
 		fail(w, 429, "尝试次数过多，请 15 分钟后再试")
 		return
 	}
@@ -229,6 +256,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		a, e := s.DB.AccountByUsername(req.Username)
 		if e != nil || a.Disabled || bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(req.Password)) != nil {
 			s.guard.fail(ip)
+			s.guard.fail(usernameKey)
 			fail(w, 401, "用户名或密码错误")
 			return
 		}
@@ -255,7 +283,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.guard.reset(ip)
+	// A successful account must not replenish this source's aggregate budget.
+	// Only a complete login clears the matching username's password failures.
+	s.guard.reset(usernameKey)
 	s.guard.reset("factor-owner:" + owner)
 	s.guard.reset("factor-ip:" + ip)
 	tok := randomToken()

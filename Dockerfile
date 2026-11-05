@@ -6,7 +6,7 @@ RUN npm ci --no-fund --no-audit
 COPY frontend/ ./
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine AS backend
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS backend
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOEXPERIMENT=nogreenteag
 # 运行阶段：单二进制 + ffmpeg/ffprobe（播放兼容、视频切分和封面）
 FROM alpine:3.23
 LABEL org.opencontainers.image.title="Pimg" \
-      org.opencontainers.image.version="1.0.53" \
+      org.opencontainers.image.version="1.0.54" \
       org.opencontainers.image.source="https://github.com/jesongit/pimg" \
       org.opencontainers.image.url="https://www.posase.net" \
       org.opencontainers.image.description="Multi-user image and album storage with Telegram archives"

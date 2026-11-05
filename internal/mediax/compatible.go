@@ -181,7 +181,10 @@ func makeCompatible(ctx context.Context, source string, file *os.File, dest, kin
 		if isHEIF(source) {
 			return heifPNG(ctx, source, dest, 8192)
 		}
-		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1", "-i", source, "-frames:v", "1", "-f", "image2", "-c:v", "png", dest}
+		if err := checkFFmpegImagePixels(ctx, source); err != nil {
+			return err
+		}
+		args := []string{"-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2", "-filter_threads", "1", "-max_pixels", strconv.Itoa(MaxPixels), "-i", source, "-frames:v", "1", "-f", "image2", "-c:v", "png", dest}
 		return runVideoCommand(ctx, args)
 	}
 	if kind != "video" {
@@ -350,4 +353,3 @@ func compatibleAttempts(info VideoInfo, mode string, caps BrowserCaps) []encodeA
 	}
 	return []encodeAttempt{hardware, software}
 }
-

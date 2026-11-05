@@ -22,7 +22,7 @@ func (s *Server) accountAuth(next http.HandlerFunc) http.HandlerFunc {
 			sum := sha256.Sum256([]byte(strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))))
 			if token, e := s.DB.GetTokenByHash(hex.EncodeToString(sum[:])); e == nil && (token.Scope == "account" || token.Scope == "admin" && token.OwnerID == dbx.AdminOwner) {
 				owner = token.OwnerID
-				s.DB.TouchToken(token.TokenHash)
+				s.DB.TouchToken(token)
 			}
 		} else if cookie, e := r.Cookie(sessionCookie); e == nil {
 			sum := sha256.Sum256([]byte(cookie.Value))
