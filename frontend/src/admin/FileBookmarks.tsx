@@ -18,6 +18,7 @@ export type BookmarkNode = {
 };
 
 export type BookmarkTarget = { path: string; name: string; directory: boolean };
+type BookmarkOpenHandler = (node: BookmarkNode, locate?: boolean) => void;
 
 const base = "/api/admin/file-browser/bookmarks";
 const keyOf = (node: BookmarkNode) => `${node.type}-${node.id}`;
@@ -210,12 +211,51 @@ export function BookmarkRowButton({ target, tree, saved, onAdd, onRemovePath }: 
   </>;
 }
 
-function BookmarkChip({ node, currentPath, onOpen, onRemoveItem, hidden }: {
-  node: BookmarkNode; currentPath?: string; onOpen: (node: BookmarkNode) => void; onRemoveItem: (id: number) => void; hidden?: boolean;
+function BookmarkOpenButton({ node, currentPath, onOpen, menuItem = false }: {
+  node: BookmarkNode; currentPath?: string; onOpen: BookmarkOpenHandler; menuItem?: boolean;
 }) {
+  const button = useRef<HTMLButtonElement>(null);
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const cancel = () => { if (pending.current !== null) clearTimeout(pending.current); pending.current = null; setWaiting(false); };
+  useEffect(() => {
+    if (!waiting) return;
+    const outside = (event: PointerEvent) => { if (!button.current?.contains(event.target as Node)) cancel(); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") cancel(); };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape);
+    document.addEventListener("dragstart", cancel, true);
+    return () => {
+      if (pending.current !== null) clearTimeout(pending.current);
+      pending.current = null;
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape);
+      document.removeEventListener("dragstart", cancel, true);
+    };
+  }, [waiting]);
   const path = node.path || "";
+  const hint = node.directory ? "点击打开文件夹" : "单击打开文件，双击打开所在文件夹；Shift+Enter 定位目录";
+  return <button ref={button} type="button" role={menuItem ? "menuitem" : undefined} className={menuItem ? "file-bookmark-open" : "text-button file-bookmark-chip-open"}
+    title={`${browserPathLabel(path)}\n${hint}`} aria-current={path === currentPath ? "location" : undefined} onBlur={cancel}
+    onKeyDown={event => { if (event.key === "Enter" && event.shiftKey) { event.preventDefault(); cancel(); onOpen(node, true); } }}
+    onClick={event => {
+      cancel();
+      if (event.detail > 1) return;
+      if (node.directory || event.detail === 0) { onOpen(node); return; }
+      // Keep file buttons and their menus in place until a double click resolves.
+      setWaiting(true);
+      pending.current = setTimeout(() => { pending.current = null; setWaiting(false); onOpen(node); }, 500);
+    }}
+    onDoubleClick={event => { event.preventDefault(); cancel(); if (!node.directory) onOpen(node, true); }}>
+    {menuItem ? <span>{node.name || browserPathLabel(path)}</span> : node.name || browserPathLabel(path)}
+  </button>;
+}
+
+function BookmarkChip({ node, currentPath, onOpen, onRemoveItem, hidden }: {
+  node: BookmarkNode; currentPath?: string; onOpen: BookmarkOpenHandler; onRemoveItem: (id: number) => void; hidden?: boolean;
+}) {
   return <div className={`file-bookmarks-bar-item${hidden ? " is-overflow" : ""}`} data-key={keyOf(node)}>
-    <button type="button" className="text-button file-bookmark-chip-open" title={browserPathLabel(path)} aria-current={path === currentPath ? "location" : undefined} onClick={() => onOpen(node)}>{node.name || browserPathLabel(path)}</button>
+    <BookmarkOpenButton node={node} currentPath={currentPath} onOpen={onOpen} />
     <button type="button" className="file-bookmark-chip-remove" aria-label={`移除收藏 ${node.name}`} title="移除收藏（不删除原文件）" onClick={() => onRemoveItem(node.id)}><IconX size={13} /></button>
   </div>;
 }
@@ -276,27 +316,26 @@ function dragHandlers(drag: BookmarkDragState | null, node: BookmarkNode, siblin
 }
 
 function BookmarkRows({ nodes, siblings, parent, currentPath, onOpen, onRemoveItem, onRemoveFolder, depth = 0 }: {
-  nodes: BookmarkNode[]; siblings?: BookmarkNode[]; parent: number; currentPath?: string; onOpen: (node: BookmarkNode) => void; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void; depth?: number;
+  nodes: BookmarkNode[]; siblings?: BookmarkNode[]; parent: number; currentPath?: string; onOpen: BookmarkOpenHandler; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void; depth?: number;
 }) {
   const drag = useContext(BookmarkDragContext);
   const all = siblings ?? nodes;
   return <>{nodes.map(node => {
     if (node.type === "folder") return <BookmarkFolderRow key={keyOf(node)} folder={node} siblings={all} parent={parent} depth={depth} currentPath={currentPath} onOpen={onOpen} onRemoveItem={onRemoveItem} onRemoveFolder={onRemoveFolder} />;
-    const path = node.path || "";
     return <div key={keyOf(node)} className={`file-bookmark-row${dragRowClass(drag, node.id)}`} role="none" {...dragHandlers(drag, node, all, parent)}>
-      <button type="button" role="menuitem" className="file-bookmark-open" title={browserPathLabel(path)} aria-current={path === currentPath ? "location" : undefined} onClick={() => onOpen(node)}><span>{node.name || browserPathLabel(path)}</span></button>
+      <BookmarkOpenButton node={node} currentPath={currentPath} onOpen={onOpen} menuItem />
       <button type="button" className="file-bookmark-remove" aria-label={`移除收藏 ${node.name}`} title="移除收藏（不删除原文件）" onClick={() => onRemoveItem(node.id)}><IconX size={15} /></button>
     </div>;
   })}</>;
 }
 
 function BookmarkFolderRow({ folder, siblings, parent, depth, currentPath, onOpen, onRemoveItem, onRemoveFolder }: {
-  folder: BookmarkNode; siblings: BookmarkNode[]; parent: number; depth?: number; currentPath?: string; onOpen: (node: BookmarkNode) => void; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void;
+  folder: BookmarkNode; siblings: BookmarkNode[]; parent: number; depth?: number; currentPath?: string; onOpen: BookmarkOpenHandler; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void;
 }) {
   const drag = useContext(BookmarkDragContext);
   const menu = useLibraryPopover(240, "left", { placement: "left", autoFocus: false });
   const children = folder.children || [];
-  const openChild = (node: BookmarkNode) => { menu.close(true); onOpen(node); };
+  const openChild: BookmarkOpenHandler = (node, locate) => { menu.close(true); onOpen(node, locate); };
   return <>
     <div className={`file-bookmark-row file-bookmark-folder-row${dragRowClass(drag, folder.id)}`} role="none" {...dragHandlers(drag, folder, siblings, parent)}>
       <button ref={menu.trigger} type="button" role="menuitem" className="file-bookmark-open file-bookmark-folder-open" aria-haspopup="menu" aria-expanded={menu.open} onClick={() => menu.toggle()}><IconFolder size={15} /><span>{folder.name}</span><IconChevronRight size={13} className="file-bookmark-submenu-arrow" /></button>
@@ -314,12 +353,12 @@ function BookmarkFolderRow({ folder, siblings, parent, depth, currentPath, onOpe
 }
 
 function BookmarkFolderChip({ folder, currentPath, onOpen, onRemoveItem, onRemoveFolder, onMove, hidden }: {
-  folder: BookmarkNode; currentPath?: string; onOpen: (node: BookmarkNode) => void; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void; onMove: (id: number, parent: number, position: number) => void; hidden?: boolean;
+  folder: BookmarkNode; currentPath?: string; onOpen: BookmarkOpenHandler; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void; onMove: (id: number, parent: number, position: number) => void; hidden?: boolean;
 }) {
   const menu = useLibraryPopover(260, "left");
   const [confirm, setConfirm] = useState(false);
   const children = folder.children || [];
-  const openAndClose = (node: BookmarkNode) => { menu.close(true); onOpen(node); };
+  const openAndClose: BookmarkOpenHandler = (node, locate) => { menu.close(true); onOpen(node, locate); };
   return <div className={`file-bookmarks-bar-item${hidden ? " is-overflow" : ""}`} data-key={keyOf(folder)}>
     <button ref={menu.trigger} type="button" className="text-button file-bookmark-folder-toggle" title={folder.name} aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle}><IconFolder size={15} /><span>{folder.name}</span><IconChevronDown size={13} /></button>
     {menu.open && createPortal(<div ref={menu.popup} role="menu" className="file-bookmark-menu" style={menu.position} aria-label={`收藏文件夹 ${folder.name}`}>
@@ -391,7 +430,7 @@ export function MultiBookmarkButton({ targets, tree, onAdd }: {
 }
 
 export function FileBookmarksBar({ tree, currentPath, onOpen, onRemoveItem, onRemoveFolder, onCreateFolder, onMove }: {
-  tree: BookmarkNode[]; currentPath?: string; onOpen: (node: BookmarkNode) => void; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void;
+  tree: BookmarkNode[]; currentPath?: string; onOpen: BookmarkOpenHandler; onRemoveItem: (id: number) => void; onRemoveFolder: (id: number) => void;
   onCreateFolder: (parent: number, name: string) => Promise<number | null>; onMove: (id: number, parent: number, position: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -475,7 +514,7 @@ export function FileBookmarksBar({ tree, currentPath, onOpen, onRemoveItem, onRe
     {moreMenu.open && overflow.length > 0 && createPortal(<div ref={moreMenu.popup} role="menu" className="file-bookmark-menu" style={moreMenu.position} aria-label="更多收藏">
       <div className="file-bookmark-menu-list">
         <BookmarkDragProvider onMove={onMove}>
-          <BookmarkRows nodes={overflow} siblings={tree} parent={0} currentPath={currentPath} onOpen={node => { moreMenu.close(true); onOpen(node); }} onRemoveItem={onRemoveItem} onRemoveFolder={onRemoveFolder} />
+          <BookmarkRows nodes={overflow} siblings={tree} parent={0} currentPath={currentPath} onOpen={(node, locate) => { moreMenu.close(true); onOpen(node, locate); }} onRemoveItem={onRemoveItem} onRemoveFolder={onRemoveFolder} />
         </BookmarkDragProvider>
       </div>
     </div>, document.body)}

@@ -75,7 +75,7 @@ export default function FileBrowser() {
     setBookmarkLoading(false); setDetail(null); setSearch("");
     setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(!options?.clearFilter && filter ? { filter } : {}) });
   }, [setParams, sort, filter]);
-  const openBookmark = useCallback((node: BookmarkNode) => {
+  const openBookmark = useCallback((node: BookmarkNode, locate = false) => {
     if (!node.path) return;
     bookmarkLookup.current?.abort();
     const controller = new AbortController(); bookmarkLookup.current = controller;
@@ -84,14 +84,15 @@ export default function FileBrowser() {
     // rebuilding or simply not contain the bookmarked file's page yet.
     void api.get<{ entry: BrowserEntry; parent: string }>(`${browserBase}/entry?${new URLSearchParams({ path: node.path })}`, controller.signal).then(({ entry, parent }) => {
       if (controller.signal.aborted) return;
-      // Bookmarks locate the source folder; files can be previewed from its list.
-      visit(entry.directory ? entry.path : parent, { clearFilter: true });
+      if (entry.directory || locate) { visit(entry.directory ? entry.path : parent, { clearFilter: true }); return; }
+      if (entry.kind !== "image" && entry.kind !== "video") { toast("此类型的文件暂不支持预览，可双击收藏打开所在文件夹", "err"); return; }
+      setDetail({ entry, scope });
     }).catch(cause => {
       if (!controller.signal.aborted) toast(cause instanceof TypeError ? "读取收藏失败，请检查网络后重试" : cause.message || "无法打开收藏，请检查文件是否存在及目录读取权限", "err");
     }).finally(() => {
       if (bookmarkLookup.current === controller) { bookmarkLookup.current = null; setBookmarkLoading(false); }
     });
-  }, [visit, toast]);
+  }, [visit, scope, toast]);
   useEffect(() => {
     setBookmarkLoading(false);
     return () => { bookmarkLookup.current?.abort(); bookmarkLookup.current = null; };
@@ -279,7 +280,7 @@ export default function FileBrowser() {
         <span className="file-browser-count" role="status">{bookmarkLoading ? "正在打开收藏…" : [data ? `${data.scan_limited ? "已扫描到 " : ""}${data.total} ${recursive ? "个文件 · 含子文件夹" : "项"}` : loading ? "读取中…" : "", filter ? `（${filterOptions.find(option => option.value === filter)?.label}）` : ""].join("")}</span>
       </div>
     </div>
-    <FileBookmarksBar tree={bookmarks.tree} currentPath={currentFolder?.path} onOpen={openBookmark} onRemoveItem={bookmarks.removeItem} onRemoveFolder={bookmarks.removeFolder} onCreateFolder={bookmarks.createFolder} onMove={bookmarks.move} />
+    <FileBookmarksBar key={scope} tree={bookmarks.tree} currentPath={currentFolder?.path} onOpen={openBookmark} onRemoveItem={bookmarks.removeItem} onRemoveFolder={bookmarks.removeFolder} onCreateFolder={bookmarks.createFolder} onMove={bookmarks.move} />
     <div className="file-browser-content" aria-busy={loading || bookmarkLoading}>
       {data?.indexed && <FloatingFeedback className="file-browser-warning" role="status">{data.index_building ? "正在建立索引，当前列表可能尚不完整，完成后自动更新。" : data.index_updating ? "正在更新索引，先显示已记录的文件。" : "已使用文件索引"}{data.index_error && ` ${data.index_error}，请检查目录并刷新。`}{indexChanged && <> 文件已更新。<button type="button" className="text-button" onClick={() => setRevision(value => value + 1)}>载入最新列表</button></>}</FloatingFeedback>}
       {!!data?.scan_limited && <FloatingFeedback className="file-browser-warning" role="status">目录过大，本次仅展示已扫描范围内的 {data.total} 个文件。进入更小的子文件夹后展开，可查看完整内容。</FloatingFeedback>}
