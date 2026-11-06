@@ -70,10 +70,10 @@ export default function FileBrowser() {
     reveal(); const observer = new ResizeObserver(reveal); observer.observe(nav);
     return () => observer.disconnect();
   }, [data?.path]);
-  const visit = useCallback((next: string) => {
+  const visit = useCallback((next: string, options?: { clearFilter?: boolean }) => {
     bookmarkLookup.current?.abort(); bookmarkLookup.current = null;
     setBookmarkLoading(false); setDetail(null); setSearch("");
-    setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(filter ? { filter } : {}) });
+    setParams({ path: next, ...(sort !== "name" ? { sort } : {}), ...(!options?.clearFilter && filter ? { filter } : {}) });
   }, [setParams, sort, filter]);
   const openBookmark = useCallback((node: BookmarkNode) => {
     if (!node.path) return;
@@ -84,16 +84,14 @@ export default function FileBrowser() {
     // rebuilding or simply not contain the bookmarked file's page yet.
     void api.get<{ entry: BrowserEntry; parent: string }>(`${browserBase}/entry?${new URLSearchParams({ path: node.path })}`, controller.signal).then(({ entry, parent }) => {
       if (controller.signal.aborted) return;
-      visit(entry.directory ? entry.path : parent);
-      if (entry.directory) return;
-      if (entry.kind !== "image" && entry.kind !== "video") { toast("此类型的文件暂不支持预览", "err"); return; }
-      setDetail({ entry, scope: JSON.stringify([storageKey, parent, "", sort, filter, false, revision]) });
+      // Bookmarks locate the source folder; files can be previewed from its list.
+      visit(entry.directory ? entry.path : parent, { clearFilter: true });
     }).catch(cause => {
       if (!controller.signal.aborted) toast(cause instanceof TypeError ? "读取收藏失败，请检查网络后重试" : cause.message || "无法打开收藏，请检查文件是否存在及目录读取权限", "err");
     }).finally(() => {
       if (bookmarkLookup.current === controller) { bookmarkLookup.current = null; setBookmarkLoading(false); }
     });
-  }, [visit, storageKey, sort, filter, revision, toast]);
+  }, [visit, toast]);
   useEffect(() => {
     setBookmarkLoading(false);
     return () => { bookmarkLookup.current?.abort(); bookmarkLookup.current = null; };
